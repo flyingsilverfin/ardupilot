@@ -405,6 +405,7 @@ def progress_cmd(what, cmd):
 
 
 def run_cmd_blocking(what, cmd, quiet=False, check=False, **kw):
+    print("running blocking: ",cmd)
     if not quiet:
         progress_cmd(what, cmd)
     p = subprocess.Popen(cmd, **kw)

@@ -1763,7 +1763,7 @@ void GCS_MAVLINK_Copter::handleMessage(mavlink_message_t* msg)
 
     case MAVLINK_MSG_ID_ADSB_VEHICLE:
     case MAVLINK_MSG_ID_UAVIONIX_ADSB_OUT_CFG:
-    case MAVLINK_MSG_ID_UAVIONIX_ADSB_OUT_DYNAMIC:
+    //case MAVLINK_MSG_ID_UAVIONIX_ADSB_OUT_DYNAMIC: //addition Joshua Send - temporary change to make out_dynamic == adsb_vehicle
     case MAVLINK_MSG_ID_UAVIONIX_ADSB_TRANSCEIVER_HEALTH_REPORT:
 #if ADSB_ENABLED == ENABLED
         copter.adsb.handle_message(chan, msg);

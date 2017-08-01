@@ -1,0 +1,11 @@
+{
+    "python.linting.pylintEnabled": false,
+    "files.associations": {
+        "memory": "cpp",
+        "mutex": "cpp",
+        "xmemory": "cpp",
+        "webclient.c": "cpp",
+        "lpc17_can.c": "cpp",
+        "stm32_can.c": "cpp"
+    }
+}

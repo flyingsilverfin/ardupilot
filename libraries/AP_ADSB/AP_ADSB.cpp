@@ -33,6 +33,9 @@
 #define ADSB_VEHICLE_LIST_SIZE_MAX      100
 #define ADSB_CHAN_TIMEOUT_MS            15000
 
+//Addition Joshua Send
+#define ADSB_TX_PERIOD                  1000    //ms between dynamic_out
+
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)
     #define ADSB_LIST_RADIUS_DEFAULT        10000 // in meters
 #else // APM_BUILD_TYPE(APM_BUILD_ArduCopter), Rover, Boat
@@ -240,8 +243,8 @@ void AP_ADSB::update(void)
             send_configure(chan);
         } // last_config_ms
 
-        // send dynamic data to transceiver at 5Hz
-        if (now - out_state.last_report_ms >= 200 && HAVE_PAYLOAD_SPACE(chan, UAVIONIX_ADSB_OUT_DYNAMIC)) {
+        // send dynamic data to transceiver with period ADSB_TX_PERIOD
+        if (now - out_state.last_report_ms >= ADSB_TX_PERIOD && HAVE_PAYLOAD_SPACE(chan, UAVIONIX_ADSB_OUT_DYNAMIC)) {
             out_state.last_report_ms = now;
             send_dynamic_out(chan);
         } // last_report_ms
@@ -514,6 +517,7 @@ void AP_ADSB::send_dynamic_out(const mavlink_channel_t chan)
     }
 
 
+    ::printf("Sending dyanmic out on channel %d \n", (int)chan);
 
     mavlink_msg_uavionix_adsb_out_dynamic_send(
             chan,
@@ -658,7 +662,7 @@ void AP_ADSB::handle_message(const mavlink_channel_t chan, const mavlink_message
         break;
 
     case MAVLINK_MSG_ID_UAVIONIX_ADSB_OUT_CFG:
-    case MAVLINK_MSG_ID_UAVIONIX_ADSB_OUT_DYNAMIC:
+    //case MAVLINK_MSG_ID_UAVIONIX_ADSB_OUT_DYNAMIC: //Addition Joshua Send - Temporary rename out_dynamic == adsb_vehicle
         // unhandled, these are outbound packets only
     default:
         break;

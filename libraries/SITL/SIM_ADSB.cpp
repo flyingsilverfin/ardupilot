@@ -32,6 +32,12 @@ ADSB::ADSB(const struct sitl_fdm &_fdm, const char *_home_str) :
 {
     float yaw_degrees;
     Aircraft::parse_home(_home_str, home, yaw_degrees);
+
+    ICAO_address = (uint32_t)(rand()%10000);
+    snprintf(callsign, sizeof(callsign), "SIM%u", ICAO_address);
+
+    adsb_coordinator.connect(target_address, coordinator_port);
+    receive_external_adsb.bind(target_address, receive_external_adsb_port);
 }
 
 
@@ -73,11 +79,13 @@ void ADSB_Vehicle::update(float delta_t)
 */
 void ADSB::update(void)
 {
+
     if (_sitl == nullptr) {
         _sitl = (SITL *)AP_Param::find_object("SIM_");
         return;
     } else if (_sitl->adsb_plane_count <= 0) {
-        return;
+        //return;
+        num_vehicles = 0;  // override to get to send_report no matter what, just skip the vehicle updating
     } else if (_sitl->adsb_plane_count >= num_vehicles_MAX) {
         _sitl->adsb_plane_count.set_and_save(0);
         num_vehicles = 0;
@@ -138,10 +146,44 @@ void ADSB::send_report(void)
                         seen_heartbeat = true;
                         vehicle_component_id = msg.compid;
                         vehicle_system_id = msg.sysid;
-                        ::printf("ADSB using srcSystem %u\n", (unsigned)vehicle_system_id);
+                        ::printf("ADSB using srcSystem %u from port %u\n", (unsigned)vehicle_system_id, (unsigned) target_port);
                     }
                     break;
                 }
+                default: {
+                    ::printf("Received message in SIM_ADSB with id: %d \n", msg.msgid);
+                    break;
+                }
+                }
+            }
+        }
+    }
+
+    /*
+        Addition to check for reports from coordinator
+    */
+
+    while ((ret=adsb_coordinator.recv(buf, sizeof(buf), 0)) > 0) {
+        for (uint8_t i=0; i<ret; i++) {
+            mavlink_message_t msg;
+            mavlink_status_t status;
+            if (mavlink_frame_char_buffer(&mavlink_external.rxmsg, &mavlink_external.status,
+                                          buf[i],
+                                          &msg, &status) == MAVLINK_FRAMING_OK) {
+                switch (msg.msgid) {
+                    /*
+                    TODO - add to avoidance list etc
+                    */
+                    case MAVLINK_MSG_ID_ADSB_VEHICLE: {
+                        mavlink_adsb_vehicle_t vehicle;
+                        mavlink_msg_adsb_vehicle_decode(&msg, &vehicle);
+                        ::printf("Received mavlink adsb vehicle message with ICAO %u", vehicle.ICAO_address);
+                        break;
+                    }
+                    default : {
+                        ::printf("Received non-adsb message on external link: %u", msg.msgid);
+                        break;
+                    }
                 }
             }
         }
@@ -241,7 +283,7 @@ void ADSB::send_report(void)
     if (_sitl->adsb_tx && now - last_tx_report_ms > 1000) {
         last_tx_report_ms = now;
 
-        mavlink_status_t *chan0_status = mavlink_get_channel_status(MAVLINK_COMM_0);
+        mavlink_status_t *chan0_status = mavlink_get_channel_status(MAVLINK_COMM_0);    // this goes to GCS
         uint8_t saved_seq = chan0_status->current_tx_seq;
         uint8_t saved_flags = chan0_status->flags;
         chan0_status->flags &= ~MAVLINK_STATUS_FLAG_OUT_MAVLINK1;
@@ -258,6 +300,46 @@ void ADSB::send_report(void)
         if (len > 0) {
             mav_socket.send(msgbuf, len);
             ::printf("ADSBsim send tx health packet\n");
+        }
+
+
+        /*
+            Send this vehicle's status to external coordinator
+        */
+
+        ::printf("ADSBsim sending a message to the external coordinator\n");
+
+        mavlink_adsb_vehicle_t this_vehicle {};
+
+        sitl_fdm &state = _sitl->state;
+
+        this_vehicle.ICAO_address = ICAO_address;
+        this_vehicle.lat = state.latitude;
+        this_vehicle.lon = state.longitude;
+        this_vehicle.altitude_type = ADSB_ALTITUDE_TYPE_PRESSURE_QNH;
+        this_vehicle.altitude = state.altitude;
+        this_vehicle.heading = wrap_360_cd(degrees(atan2f(state.speedN, state.speedE)));
+        this_vehicle.hor_velocity = norm(state.speedE, state.speedN);
+        this_vehicle.ver_velocity = -state.speedD; // keep in m/s? Old code had scaled by 100 for cm/s
+        memcpy(this_vehicle.callsign, callsign, sizeof(callsign));
+        this_vehicle.emitter_type = ADSB_EMITTER_TYPE_LARGE;
+        this_vehicle.tslc = 1;
+        this_vehicle.flags =
+            ADSB_FLAGS_VALID_COORDS |
+            ADSB_FLAGS_VALID_ALTITUDE |
+            ADSB_FLAGS_VALID_HEADING |
+            ADSB_FLAGS_VALID_VELOCITY |
+            ADSB_FLAGS_VALID_CALLSIGN;
+        this_vehicle.squawk = 0; // NOTE: ADSB_FLAGS_VALID_SQUAWK bit is not set
+
+        len = mavlink_msg_adsb_vehicle_encode(vehicle_system_id,
+                                              MAV_COMP_ID_ADSB,
+                                              &msg, &this_vehicle);
+        //uint8_t msgbuf[len];
+        len = mavlink_msg_to_send_buffer(msgbuf, &msg);
+        if (len > 0) {
+            adsb_coordinator.send(msgbuf, len);
+            ::printf("sent more than 1 byte!\n");
         }
     }
 

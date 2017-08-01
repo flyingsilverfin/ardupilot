@@ -50,6 +50,7 @@ private:
     const char *target_address = "127.0.0.1";
     const uint16_t target_port = 5762;
 
+// all these simulated ADS-B vehicles will be unnecessary
     Location home;
     uint8_t num_vehicles = 0;
     static const uint8_t num_vehicles_MAX = 200;
@@ -66,6 +67,11 @@ private:
     uint8_t vehicle_system_id;
     uint8_t vehicle_component_id;
 
+
+    char callsign[9];
+    uint32_t ICAO_address;
+
+
     SocketAPM mav_socket { false };
     struct {
         // socket to telem2 on aircraft
@@ -74,6 +80,24 @@ private:
         mavlink_status_t status;
         uint8_t seq;
     } mavlink {};
+
+    /*
+        External ADSB Coordinator comms
+    */
+    SocketAPM adsb_coordinator { true };            // UDP
+    static const uint16_t coordinator_port = 3000;  // UDP destination port
+    struct {
+        // socket to telem2 on aircraft
+        bool connected;
+        mavlink_message_t rxmsg;
+        mavlink_status_t status;
+        uint8_t seq;
+    } mavlink_external {};
+
+    SocketAPM receive_external_adsb { true };
+    const uint16_t receive_external_adsb_port = target_port; // reuse for UDP
+
+
 
     void send_report(void);
 };
