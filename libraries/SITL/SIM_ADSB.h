@@ -48,7 +48,8 @@ public:
 private:
     const struct sitl_fdm &fdm;
     const char *target_address = "127.0.0.1";
-    const uint16_t target_port = 5762;
+    const uint16_t target_port_base = 5762;
+    uint16_t target_port = 0; //placeholder
 
 // all these simulated ADS-B vehicles will be unnecessary
     Location home;
@@ -100,6 +101,8 @@ private:
 
 
     void send_report(void);
+    void receive_external_coordinator_messages(void);
+    void handle_external_coordinator_message(mavlink_message_t &msg);
 };
 
 }  // namespace SITL

@@ -33,11 +33,19 @@ ADSB::ADSB(const struct sitl_fdm &_fdm, const char *_home_str) :
     float yaw_degrees;
     Aircraft::parse_home(_home_str, home, yaw_degrees);
 
-    ICAO_address = (uint32_t)(rand()%10000);
-    snprintf(callsign, sizeof(callsign), "SIM%u", ICAO_address);
+    //ICAO_address = (uint32_t)(rand()%10000);
+    //snprintf(callsign, sizeof(callsign), "SIM%u", ICAO_address);
 
     adsb_coordinator.connect(target_address, coordinator_port);
     receive_external_adsb.bind(target_address, receive_external_adsb_port);
+
+
+    if (_sitl == nullptr) {
+        _sitl = (SITL *)AP_Param::find_object("SIM_");
+    }
+
+    target_port = target_port_base + 10*_sitl->instance;
+
 }
 
 
@@ -106,9 +114,12 @@ void ADSB::update(void)
     for (uint8_t i=0; i<num_vehicles; i++) {
         vehicles[i].update(delta_t);
     }
+
+    //
     
     // see if we should do a report
     send_report();
+    receive_external_coordinator_messages();
 }
 
 /*
@@ -133,6 +144,7 @@ void ADSB::send_report(void)
     uint8_t buf[100];
     ssize_t ret;
 
+
     while ((ret=mav_socket.recv(buf, sizeof(buf), 0)) > 0) {
         for (uint8_t i=0; i<ret; i++) {
             mavlink_message_t msg;
@@ -150,40 +162,25 @@ void ADSB::send_report(void)
                     }
                     break;
                 }
+
+                case MAVLINK_MSG_ID_UAVIONIX_ADSB_OUT_DYNAMIC: {
+                    ::printf("Received MAVLINK_MSG_ID_UAVIONIX_ADSB_OUT_DYNAMIC message from drone controller");
+                    // this already has a transmit rate set in the firmware, don't need to check output rate here
+                    // just pass on to coordinator
+
+                    uint8_t msgbuf[500];    // not sure what maximum length might be, #OPTIMIZE
+                    uint16_t size = mavlink_msg_to_send_buffer(msgbuf, &msg);
+                    if (size > 0) {
+                        ::printf("Sent!");
+                        adsb_coordinator.send(msgbuf, size);
+                    }
+                    break;
+                }                
                 default: {
-                    ::printf("Received message in SIM_ADSB with id: %d \n", msg.msgid);
+                    ::printf("Received non-heartbeat or adsb_vehicle message in SIM_ADSB with id: %d \n", msg.msgid);
+                    
                     break;
                 }
-                }
-            }
-        }
-    }
-
-    /*
-        Addition to check for reports from coordinator
-    */
-
-    while ((ret=adsb_coordinator.recv(buf, sizeof(buf), 0)) > 0) {
-        for (uint8_t i=0; i<ret; i++) {
-            mavlink_message_t msg;
-            mavlink_status_t status;
-            if (mavlink_frame_char_buffer(&mavlink_external.rxmsg, &mavlink_external.status,
-                                          buf[i],
-                                          &msg, &status) == MAVLINK_FRAMING_OK) {
-                switch (msg.msgid) {
-                    /*
-                    TODO - add to avoidance list etc
-                    */
-                    case MAVLINK_MSG_ID_ADSB_VEHICLE: {
-                        mavlink_adsb_vehicle_t vehicle;
-                        mavlink_msg_adsb_vehicle_decode(&msg, &vehicle);
-                        ::printf("Received mavlink adsb vehicle message with ICAO %u", vehicle.ICAO_address);
-                        break;
-                    }
-                    default : {
-                        ::printf("Received non-adsb message on external link: %u", msg.msgid);
-                        break;
-                    }
                 }
             }
         }
@@ -193,9 +190,9 @@ void ADSB::send_report(void)
         return;
     }
 
-    uint32_t now = AP_HAL::millis();
     mavlink_message_t msg;
     uint16_t len;
+    uint32_t now = AP_HAL::millis();
 
     if (now - last_heartbeat_ms >= 1000) {
         mavlink_heartbeat_t heartbeat;
@@ -303,12 +300,14 @@ void ADSB::send_report(void)
         }
 
 
+    }
+}
+
         /*
             Send this vehicle's status to external coordinator
+                ***No longer needed - got passthrough from actual AP_ADSB working (above)
         */
-
-        ::printf("ADSBsim sending a message to the external coordinator\n");
-
+/*
         mavlink_adsb_vehicle_t this_vehicle {};
 
         sitl_fdm &state = _sitl->state;
@@ -342,7 +341,62 @@ void ADSB::send_report(void)
             ::printf("sent more than 1 byte!\n");
         }
     }
+*/
+
+void ADSB::receive_external_coordinator_messages() {
+    /*
+        Addition to check for reports from coordinator
+    */
+
+    uint8_t buf[100];
+    ssize_t ret;
+
+    while ((ret=receive_external_adsb.recv(buf, sizeof(buf), 0)) > 0) {
+        for (uint8_t i=0; i<ret; i++) {
+            mavlink_message_t msg;
+            mavlink_status_t status;
+            if (mavlink_frame_char_buffer(&mavlink_external.rxmsg, &mavlink_external.status,
+                                        buf[i],
+                                        &msg, &status) == MAVLINK_FRAMING_OK) {
+                switch (msg.msgid) {
+                    /*
+                    TODO - add to avoidance list etc
+                    */
+                    case MAVLINK_MSG_ID_ADSB_VEHICLE: {
+                        //mavlink_adsb_vehicle_t vehicle;
+                        //mavlink_msg_adsb_vehicle_decode(&msg, &vehicle);
+                        ::printf("Received mavlink adsb vehicle message");
+
+                        handle_external_coordinator_message(msg);
+
+                        break;
+                    }
+                    default : {
+                        ::printf("Received non-ADSB_VEHICLE message on external link: %u", msg.msgid);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+void ADSB::handle_external_coordinator_message(mavlink_message_t &msg) {
+    if (!mavlink.connected && mav_socket.connect(target_address, target_port)) {
+        ::printf("ADSB connected to %s:%u\n", target_address, (unsigned)target_port);
+        mavlink.connected = true;
+    }
+    if (!mavlink.connected) {
+        return;
+    }
+
+    uint8_t msgbuf[500];
+    uint16_t len = mavlink_msg_to_send_buffer(msgbuf, &msg);
+    if (len > 0) {
+        mav_socket.send(msgbuf, len);
+    }
 
 }
+
 
 } // namespace SITL

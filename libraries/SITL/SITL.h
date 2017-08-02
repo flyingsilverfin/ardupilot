@@ -169,6 +169,13 @@ public:
 
     // convert a set of roll rates from body frame to earth frame
     static Vector3f convert_earth_frame(const Matrix3f &dcm, const Vector3f &gyro);
+
+
+
+    // Addition Joshua Send
+    // This is probably really bad
+    // but need to access 'instance' in SIM_ADSB
+    uint8_t instance;
 };
 
 } // namespace SITL

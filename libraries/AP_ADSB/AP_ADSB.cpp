@@ -516,9 +516,6 @@ void AP_ADSB::send_dynamic_out(const mavlink_channel_t chan)
         altPres = baro.get_altitude_difference(101325, baro.get_pressure()) * 1E3; // convert m to mm;
     }
 
-
-    ::printf("Sending dyanmic out on channel %d \n", (int)chan);
-
     mavlink_msg_uavionix_adsb_out_dynamic_send(
             chan,
             utcTime,

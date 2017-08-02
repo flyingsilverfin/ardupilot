@@ -58,6 +58,9 @@ public:
      */
     void set_instance(uint8_t _instance) {
         instance = _instance;
+        if (sitl != nullptr) {
+            sitl->instance = instance;
+        }
     }
 
     /*
