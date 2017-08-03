@@ -477,7 +477,9 @@ void AP_ADSB::send_dynamic_out(const mavlink_channel_t chan)
     uint8_t fixType = gps.status(); // this lines up perfectly with our enum
     uint8_t emStatus = 0; // TODO: implement this ENUM. no emergency = 0
     uint8_t numSats = gps.num_sats();
-    uint16_t squawk = 1200; // Mode A code (typically 1200 [0x04B0] for VFR)
+//    uint16_t squawk = 1200; // Mode A code (typically 1200 [0x04B0] for VFR)
+// Addition Joshua Send, hack to get an identifier for now until I hear back that everything is ok
+    uint16_t squawk = (uint16_t) out_state.cfg.ICAO_id;
 
     uint32_t accHoriz = UINT_MAX;
     float accHoriz_f;

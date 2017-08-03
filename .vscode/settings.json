@@ -48,6 +48,22 @@
         "mkpichex.c": "cpp",
         "main.c": "cpp",
         "mavnative.c": "cpp",
-        "cy_ctest.c": "cpp"
+        "cy_ctest.c": "cpp",
+        "system_error": "cpp",
+        "px4io.c": "cpp",
+        "smtp.c": "cpp",
+        "gettext.c": "cpp",
+        "sercomm.c": "cpp",
+        "lpc17_i2c.c": "cpp",
+        "lpc31_i2c.c": "cpp",
+        "lpc43_i2c.c": "cpp",
+        "readnxflat.c": "cpp",
+        "json_main.c": "cpp",
+        "dhcpc.c": "cpp",
+        "xiosbase": "cpp",
+        "xlocale": "cpp",
+        "dm320_usbdev.c": "cpp",
+        "stm32_otgfshost.c": "cpp",
+        "moduletest.c": "cpp"
     }
 }

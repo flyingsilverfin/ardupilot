@@ -49,7 +49,7 @@ private:
     const struct sitl_fdm &fdm;
     const char *target_address = "127.0.0.1";
     const uint16_t target_port_base = 5762;
-    uint16_t target_port = 0; //placeholder
+    uint16_t target_port;
 
 // all these simulated ADS-B vehicles will be unnecessary
     Location home;
@@ -69,8 +69,8 @@ private:
     uint8_t vehicle_component_id;
 
 
-    char callsign[9];
-    uint32_t ICAO_address;
+    mavlink_adsb_vehicle_t this_adsb_vehicle {};
+    uint32_t last_this_vehicle_adsb_out = 0;
 
 
     SocketAPM mav_socket { false };
@@ -103,6 +103,10 @@ private:
     void send_report(void);
     void receive_external_coordinator_messages(void);
     void handle_external_coordinator_message(mavlink_message_t &msg);
+
+    void handle_adsb_cfg_message(mavlink_message_t &msg);
+    void handle_adsb_dynamic_out_message(mavlink_message_t msg);
+    void transmit_adsb_vehicle_msg();
 };
 
 }  // namespace SITL
