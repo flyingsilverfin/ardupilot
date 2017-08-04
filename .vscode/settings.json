@@ -64,6 +64,21 @@
         "xlocale": "cpp",
         "dm320_usbdev.c": "cpp",
         "stm32_otgfshost.c": "cpp",
-        "moduletest.c": "cpp"
+        "moduletest.c": "cpp",
+        "recvfrom.c": "cpp",
+        "hx_stream.c": "cpp",
+        "slcd_main.c": "cpp",
+        "nsh_ddcmd.c": "cpp",
+        "nsh_parse.c": "cpp",
+        "textbox.c": "cpp",
+        "osmocon.c": "cpp",
+        "up_fillpage.c": "cpp",
+        "loop.c": "cpp",
+        "slip.c": "cpp",
+        "lib_printf.c": "cpp",
+        "lib_inetntoa.c": "cpp",
+        "fs_select.c": "cpp",
+        "lpc17_usbhost.c": "cpp",
+        "at90usb_usbdev.c": "cpp"
     }
 }

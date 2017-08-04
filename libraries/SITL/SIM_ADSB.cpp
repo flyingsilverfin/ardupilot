@@ -30,19 +30,24 @@ SITL *_sitl;
 ADSB::ADSB(const struct sitl_fdm &_fdm, const char *_home_str) :
     fdm(_fdm)
 {
+
     float yaw_degrees;
     Aircraft::parse_home(_home_str, home, yaw_degrees);
-
-
-    adsb_coordinator.connect(target_address, coordinator_port);
-    receive_external_adsb.bind(target_address, receive_external_adsb_port);
-
 
     if (_sitl == nullptr) {
         _sitl = (SITL *)AP_Param::find_object("SIM_");
     }
 
     target_port = target_port_base + 10*_sitl->instance;
+
+    receive_external_adsb_port = target_port;
+
+    bool success = adsb_coordinator.bind(target_address, receive_external_adsb_port);
+    ::printf("Bound to port %d with success: ", receive_external_adsb_port);
+    adsb_coordinator.connect(target_address, coordinator_port);
+
+    ::printf("Bound to port %d", receive_external_adsb_port);
+
 
     // preset what we can
     this_adsb_vehicle.flags = ADSB_FLAGS_VALID_COORDS |
@@ -378,7 +383,15 @@ void ADSB::receive_external_coordinator_messages() {
     uint8_t buf[100];
     ssize_t ret;
 
-    while ((ret=receive_external_adsb.recv(buf, sizeof(buf), 0)) > 0) {
+    /*while (1) {
+        if (receive_external_adsb.pollin(0)) {
+            ::printf("\nGOT SOMETHING");
+        }
+    }
+    */
+
+    while ((ret=adsb_coordinator.recv(buf, sizeof(buf), 0) > 0)) {
+        ::printf("\n received somethinig");
         for (uint8_t i=0; i<ret; i++) {
             mavlink_message_t msg;
             mavlink_status_t status;
@@ -386,20 +399,17 @@ void ADSB::receive_external_coordinator_messages() {
                                         buf[i],
                                         &msg, &status) == MAVLINK_FRAMING_OK) {
                 switch (msg.msgid) {
-                    /*
-                    TODO - add to avoidance list etc
-                    */
                     case MAVLINK_MSG_ID_ADSB_VEHICLE: {
                         //mavlink_adsb_vehicle_t vehicle;
                         //mavlink_msg_adsb_vehicle_decode(&msg, &vehicle);
-                        ::printf("Received mavlink adsb vehicle message");
+                        ::printf("\nReceived mavlink adsb vehicle message");
 
                         handle_external_coordinator_message(msg);
 
                         break;
                     }
                     default : {
-                        ::printf("Received non-ADSB_VEHICLE message on external link: %u", msg.msgid);
+                        ::printf("\nReceived non-ADSB_VEHICLE message on external link: %u", msg.msgid);
                         break;
                     }
                 }

@@ -87,6 +87,7 @@ private:
     */
     SocketAPM adsb_coordinator { true };            // UDP
     static const uint16_t coordinator_port = 3000;  // UDP destination port
+    uint16_t receive_external_adsb_port; // reuse for UDP
     struct {
         // socket to telem2 on aircraft
         bool connected;
@@ -94,9 +95,9 @@ private:
         mavlink_status_t status;
         uint8_t seq;
     } mavlink_external {};
-
-    SocketAPM receive_external_adsb { true };
-    const uint16_t receive_external_adsb_port = target_port; // reuse for UDP
+    
+    
+    //SocketAPM receive_external_adsb { true };
 
 
 

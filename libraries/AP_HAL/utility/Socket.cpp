@@ -20,6 +20,7 @@
 #if HAL_OS_SOCKETS
 
 #include "Socket.h"
+#include <stdio.h>
 
 /*
   constructor
@@ -133,13 +134,12 @@ ssize_t SocketAPM::sendto(const void *buf, size_t size, const char *address, uin
  */
 ssize_t SocketAPM::recv(void *buf, size_t size, uint32_t timeout_ms)
 {
-    if (!pollin(timeout_ms)) {
-        return -1;
-    }
+    //if (!pollin(timeout_ms)) {
+    //    return -1;
+    //}
     socklen_t len = sizeof(in_addr);
     return ::recvfrom(fd, buf, size, MSG_DONTWAIT, (sockaddr *)&in_addr, &len);
 }
-
 /*
   return the IP address and port of the last received packet
  */
