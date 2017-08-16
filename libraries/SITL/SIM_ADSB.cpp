@@ -20,6 +20,7 @@
 #include "SITL.h"
 
 #include <stdio.h>
+#include <errno.h>
 
 #include "SIM_Aircraft.h"
 
@@ -40,22 +41,29 @@ ADSB::ADSB(const struct sitl_fdm &_fdm, const char *_home_str) :
 
     target_port = target_port_base + 10*_sitl->instance;
 
-    receive_external_adsb_port = target_port;
+    receive_external_adsb_port = target_port + 1;
 
     
     
-
-    adsb_coordinator.connect(target_address, coordinator_port);
-    ::printf("Bound to port %d", receive_external_adsb_port);
-
-    adsb_coordinator.reuseaddress();
-    adsb_coordinator.set_blocking(false);
 
     //bool success = receive_external_adsb.bind(target_address, receive_external_adsb_port);
     //::printf("Bound tcp receive to port %d with success: ", receive_external_adsb_port);
-    bool success = adsb_coordinator.bind(target_address, receive_external_adsb_port);
-    ::printf("Bound tcp receive to port %d with success: ", receive_external_adsb_port);
+    //bool success = adsb_coordinator.bind("127.0.0.1", receive_external_adsb_port);
+    if (!adsb_coordinator.bind("0.0.0.0", receive_external_adsb_port)) {
+        ::fprintf(stderr, "SITL: socket in bind failed on sim in : %d  - %s\n", receive_external_adsb_port, strerror(errno));
+        ::fprintf(stderr, "Abording launch...\n");
+        exit(1);
+    }
+    
+    //::printf("Bound receive to port %d with success: ", receive_external_adsb_port);
 
+    adsb_coordinator.connect(target_address, coordinator_port);
+    ::printf("Connect default to port %d", coordinator_port);
+
+
+    adsb_coordinator.reuseaddress();
+    adsb_coordinator.set_blocking(false);
+    
     // preset what we can
     this_adsb_vehicle.flags = ADSB_FLAGS_VALID_COORDS |
                 ADSB_FLAGS_VALID_ALTITUDE |
@@ -391,17 +399,22 @@ void ADSB::receive_external_coordinator_messages() {
     uint8_t buf[100];
     ssize_t ret;
 
-    /*while (1) {
-        if (receive_external_adsb.pollin(0)) {
-            ::printf("\nGOT SOMETHING");
-        }
-    }
-    */
 
-    while ((ret=adsb_coordinator.recv(buf, sizeof(buf), 0) > 0)) {
-        ::printf("\n received something: %d bytes", ret);
-        ::printf("...%hhx\n", buf[0]);
-        for (uint8_t i=0; i<ret; i++) {
+    errno = 0;
+
+    do  {
+        ret = adsb_coordinator.recv(ptr, sizeof(buf), 0);
+        if (ret < 0) {
+            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != 0) {
+                fprintf(stderr, "error recv on socket in: %s \n",
+                        strerror(errno));
+            }
+            break;
+        }
+
+        ::printf("\n received something: %d bytes", (int32_t)ret);
+
+        for (uint8_t i=0; i<num_received; i++) {
             mavlink_message_t msg;
             mavlink_status_t status;
             if (mavlink_frame_char_buffer(&mavlink_external.rxmsg, &mavlink_external.status,
@@ -424,7 +437,7 @@ void ADSB::receive_external_coordinator_messages() {
                 }
             }
         }
-    }
+    } while ( ret > 0 );
 }
 
 void ADSB::handle_external_coordinator_message(mavlink_message_t &msg) {

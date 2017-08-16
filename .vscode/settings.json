@@ -89,6 +89,7 @@
         "lpc43_adc.c": "cpp",
         "ads1255.c": "cpp",
         "e1000.c": "cpp",
-        "socket.c": "cpp"
+        "socket.c": "cpp",
+        "functional": "cpp"
     }
 }
