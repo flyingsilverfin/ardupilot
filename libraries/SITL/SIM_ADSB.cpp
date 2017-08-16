@@ -42,12 +42,19 @@ ADSB::ADSB(const struct sitl_fdm &_fdm, const char *_home_str) :
 
     receive_external_adsb_port = target_port;
 
-    bool success = adsb_coordinator.bind(target_address, receive_external_adsb_port);
-    ::printf("Bound to port %d with success: ", receive_external_adsb_port);
-    adsb_coordinator.connect(target_address, coordinator_port);
+    
+    
 
+    adsb_coordinator.connect(target_address, coordinator_port);
     ::printf("Bound to port %d", receive_external_adsb_port);
 
+    adsb_coordinator.reuseaddress();
+    adsb_coordinator.set_blocking(false);
+
+    //bool success = receive_external_adsb.bind(target_address, receive_external_adsb_port);
+    //::printf("Bound tcp receive to port %d with success: ", receive_external_adsb_port);
+    bool success = adsb_coordinator.bind(target_address, receive_external_adsb_port);
+    ::printf("Bound tcp receive to port %d with success: ", receive_external_adsb_port);
 
     // preset what we can
     this_adsb_vehicle.flags = ADSB_FLAGS_VALID_COORDS |
@@ -173,13 +180,13 @@ void ADSB::send_report(void)
                         seen_heartbeat = true;
                         vehicle_component_id = msg.compid;
                         vehicle_system_id = msg.sysid;
-                        ::printf("ADSB using srcSystem %u from port %u\n", (unsigned)vehicle_system_id, (unsigned) target_port);
+                        //::printf("ADSB using srcSystem %u from port %u\n", (unsigned)vehicle_system_id, (unsigned) target_port);
                     }
                     break;
                 }
 
                 case MAVLINK_MSG_ID_UAVIONIX_ADSB_OUT_DYNAMIC: {
-                    ::printf("Received MAVLINK_MSG_ID_UAVIONIX_ADSB_OUT_DYNAMIC message from drone controller");
+                    //::printf("Received MAVLINK_MSG_ID_UAVIONIX_ADSB_OUT_DYNAMIC message from drone controller");
                     // this already has a transmit rate set in the firmware, don't need to check output rate here
                     // just parse and generate ADSB_VEHICLE msg pass on to coordinator
 
@@ -192,7 +199,7 @@ void ADSB::send_report(void)
                     break;
                 }    
                 default: {
-                    ::printf("Received copter message in SIM_ADSB with id: %d \n", msg.msgid);
+                    //::printf("Received copter message in SIM_ADSB with id: %d \n", msg.msgid);
                     
                     break;
                 }
@@ -380,6 +387,7 @@ void ADSB::receive_external_coordinator_messages() {
         Addition to check for reports from coordinator
     */
 
+
     uint8_t buf[100];
     ssize_t ret;
 
@@ -391,7 +399,8 @@ void ADSB::receive_external_coordinator_messages() {
     */
 
     while ((ret=adsb_coordinator.recv(buf, sizeof(buf), 0) > 0)) {
-        ::printf("\n received somethinig");
+        ::printf("\n received something: %d bytes", ret);
+        ::printf("...%hhx\n", buf[0]);
         for (uint8_t i=0; i<ret; i++) {
             mavlink_message_t msg;
             mavlink_status_t status;
@@ -430,7 +439,8 @@ void ADSB::handle_external_coordinator_message(mavlink_message_t &msg) {
     uint8_t msgbuf[500];
     uint16_t len = mavlink_msg_to_send_buffer(msgbuf, &msg);
     if (len > 0) {
-        mav_socket.send(msgbuf, len);
+        ssize_t sent = mav_socket.send(msgbuf, len);
+        ::printf("\nManaged to send %d byte", sent);
     }
 
 }

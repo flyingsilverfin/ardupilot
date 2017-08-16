@@ -5,6 +5,8 @@ extern const AP_HAL::HAL& hal;
 #include <limits>
 #include <GCS_MAVLink/GCS.h>
 
+#include <stdio.h>
+
 #define AVOIDANCE_DEBUGGING 0
 
 #if APM_BUILD_TYPE(APM_BUILD_ArduPlane)
@@ -253,6 +255,7 @@ void AP_Avoidance::get_adsb_samples()
 {
     AP_ADSB::adsb_vehicle_t vehicle;
     while (_adsb.next_sample(vehicle)) {
+        ::printf("Have another ADSB vehicle, ICAO: %d\n", vehicle.info.ICAO_address);
         uint32_t src_id = src_id_for_adsb_vehicle(vehicle);
         Location loc = _adsb.get_location(vehicle);
         add_obstacle(vehicle.last_update_ms,

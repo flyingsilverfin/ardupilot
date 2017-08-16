@@ -79,6 +79,16 @@
         "lib_inetntoa.c": "cpp",
         "fs_select.c": "cpp",
         "lpc17_usbhost.c": "cpp",
-        "at90usb_usbdev.c": "cpp"
+        "at90usb_usbdev.c": "cpp",
+        "stm32_i2c.c": "cpp",
+        "lib_time.c": "cpp",
+        "uip_neighbor.c": "cpp",
+        "test_float.c": "cpp",
+        "iterator": "cpp",
+        "lpc17_adc.c": "cpp",
+        "lpc43_adc.c": "cpp",
+        "ads1255.c": "cpp",
+        "e1000.c": "cpp",
+        "socket.c": "cpp"
     }
 }
