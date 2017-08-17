@@ -74,6 +74,9 @@ public:
     // mavlink message handler
     void handle_message(const mavlink_channel_t chan, const mavlink_message_t* msg);
 
+
+    static bool is_manned(const adsb_vehicle_t &vehicle);
+
 private:
 
     // initialize _vehicle_list

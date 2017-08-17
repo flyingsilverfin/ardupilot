@@ -49,6 +49,8 @@ public:
         uint32_t src_id;
         uint32_t timestamp_ms;
 
+        bool is_manned;
+
         Location _location;
         Vector3f _velocity;
 
@@ -68,12 +70,14 @@ public:
     void add_obstacle(uint32_t obstacle_timestamp_ms,
                       const MAV_COLLISION_SRC src,
                       uint32_t src_id,
+                      const bool is_manned,
                       const Location &loc,
                       const Vector3f &vel_ned);
 
     void add_obstacle(uint32_t obstacle_timestamp_ms,
                       const MAV_COLLISION_SRC src,
                       uint32_t src_id,
+                      const bool is_manned,
                       const Location &loc,
                       float cog,
                       float hspeed,
@@ -138,6 +142,11 @@ protected:
     // reference to AHRS, so we can ask for our position, heading and speed
     const AP_AHRS &_ahrs;
 
+
+
+    //TODO tmp getter for parameters, probably a convention for this via central parameters store?
+    bool is_diff_uav_avoid_set() { return _diff_uav_avoid; }
+
 private:
 
     // constants
@@ -196,6 +205,8 @@ private:
     AP_Int8     _warn_time_horizon;
     AP_Float    _warn_distance_xy;
     AP_Float    _warn_distance_z;
+
+    AP_Int8     _diff_uav_avoid; //distinguish manned and unmanned avoidance algorithms
 };
 
 float closest_distance_between_radial_and_point(const Vector2f &w,

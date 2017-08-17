@@ -403,7 +403,7 @@ void ADSB::receive_external_coordinator_messages() {
     errno = 0;
 
     do  {
-        ret = adsb_coordinator.recv(ptr, sizeof(buf), 0);
+        ret = adsb_coordinator.recv(buf, sizeof(buf), 0);
         if (ret < 0) {
             if (errno != EAGAIN && errno != EWOULDBLOCK && errno != 0) {
                 fprintf(stderr, "error recv on socket in: %s \n",
@@ -414,7 +414,7 @@ void ADSB::receive_external_coordinator_messages() {
 
         ::printf("\n received something: %d bytes", (int32_t)ret);
 
-        for (uint8_t i=0; i<num_received; i++) {
+        for (uint8_t i=0; i<ret; i++) {
             mavlink_message_t msg;
             mavlink_status_t status;
             if (mavlink_frame_char_buffer(&mavlink_external.rxmsg, &mavlink_external.status,
@@ -442,18 +442,18 @@ void ADSB::receive_external_coordinator_messages() {
 
 void ADSB::handle_external_coordinator_message(mavlink_message_t &msg) {
     if (!mavlink.connected && mav_socket.connect(target_address, target_port)) {
-        ::printf("ADSB connected to %s:%u\n", target_address, (unsigned)target_port);
+        ::printf("ADSB connected to %s:%u", target_address, (unsigned)target_port);
         mavlink.connected = true;
     }
     if (!mavlink.connected) {
         return;
     }
 
-    uint8_t msgbuf[500];
+    uint8_t msgbuf[200];
     uint16_t len = mavlink_msg_to_send_buffer(msgbuf, &msg);
     if (len > 0) {
         ssize_t sent = mav_socket.send(msgbuf, len);
-        ::printf("\nManaged to send %d byte", sent);
+        ::printf("\nSent %d bytes to SITL instance", (uint32_t)sent);
     }
 
 }

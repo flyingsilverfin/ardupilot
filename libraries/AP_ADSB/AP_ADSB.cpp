@@ -666,3 +666,8 @@ void AP_ADSB::handle_message(const mavlink_channel_t chan, const mavlink_message
     }
 
 }
+
+
+bool AP_ADSB::is_manned(const adsb_vehicle_t &vehicle) {
+    return vehicle.info.emitter_type ==  ADSB_EMITTER_TYPE_UAV;
+}

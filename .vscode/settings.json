@@ -90,6 +90,10 @@
         "ads1255.c": "cpp",
         "e1000.c": "cpp",
         "socket.c": "cpp",
-        "functional": "cpp"
+        "functional": "cpp",
+        "iomanip": "cpp",
+        "iterator_base": "cpp",
+        "map": "cpp",
+        "set": "cpp"
     }
 }

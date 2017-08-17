@@ -18,6 +18,8 @@ extern const AP_HAL::HAL& hal;
     #define AP_AVOIDANCE_FAIL_DISTANCE_Z_DEFAULT        100
     #define AP_AVOIDANCE_RECOVERY_DEFAULT               AP_AVOIDANCE_RECOVERY_RESUME_IF_AUTO_ELSE_LOITER
     #define AP_AVOIDANCE_FAIL_ACTION_DEFAULT            MAV_COLLISION_ACTION_REPORT
+    #define AP_AVOID_ANCE_DIFF_UAV_AVOID                0
+
 #else // APM_BUILD_TYPE(APM_BUILD_ArduCopter), Rover, Boat
     #define AP_AVOIDANCE_WARN_TIME_DEFAULT              30
     #define AP_AVOIDANCE_FAIL_TIME_DEFAULT              30
@@ -27,6 +29,7 @@ extern const AP_HAL::HAL& hal;
     #define AP_AVOIDANCE_FAIL_DISTANCE_Z_DEFAULT        100
     #define AP_AVOIDANCE_RECOVERY_DEFAULT               AP_AVOIDANCE_RECOVERY_RTL
     #define AP_AVOIDANCE_FAIL_ACTION_DEFAULT            MAV_COLLISION_ACTION_REPORT
+    #define AP_AVOID_ANCE_DIFF_UAV_AVOID                0
 #endif
 
 #if AVOIDANCE_DEBUGGING
@@ -117,6 +120,14 @@ const AP_Param::GroupInfo AP_Avoidance::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("F_DIST_Z",    11, AP_Avoidance, _fail_distance_z, AP_AVOIDANCE_FAIL_DISTANCE_Z_DEFAULT),
 
+
+    // @Param: UAV_AVOID
+    // @DisplayName: Distinguish UAV Avoid Behavior
+    // @Description: Treat manned and unmanned avoidance differently (copter only for now)
+    // @Values: 0:False, 1: True
+    // @User: Advanced
+    AP_GROUPINFO("UAV_AVOID",    12, AP_Avoidance, _diff_uav_avoid, AP_AVOID_ANCE_DIFF_UAV_AVOID),
+
     AP_GROUPEND
 };
 
@@ -185,6 +196,7 @@ bool AP_Avoidance::check_startup()
 void AP_Avoidance::add_obstacle(const uint32_t obstacle_timestamp_ms,
                                 const MAV_COLLISION_SRC src,
                                 const uint32_t src_id,
+                                const bool is_manned,
                                 const Location &loc,
                                 const Vector3f &vel_ned)
 {
@@ -227,11 +239,14 @@ void AP_Avoidance::add_obstacle(const uint32_t obstacle_timestamp_ms,
     _obstacles[index]._location = loc;
     _obstacles[index]._velocity = vel_ned;
     _obstacles[index].timestamp_ms = obstacle_timestamp_ms;
+
+    _obstacles[index].is_manned = is_manned;
 }
 
 void AP_Avoidance::add_obstacle(const uint32_t obstacle_timestamp_ms,
                                 const MAV_COLLISION_SRC src,
                                 const uint32_t src_id,
+                                const bool is_manned,
                                 const Location &loc,
                                 const float cog,
                                 const float hspeed,
@@ -242,7 +257,7 @@ void AP_Avoidance::add_obstacle(const uint32_t obstacle_timestamp_ms,
     vel[1] = hspeed * sinf(radians(cog));
     vel[2] = vspeed;
     // debug("cog=%f hspeed=%f veln=%f vele=%f", cog, hspeed, vel[0], vel[1]);
-    return add_obstacle(obstacle_timestamp_ms, src, src_id, loc, vel);
+    return add_obstacle(obstacle_timestamp_ms, src, src_id, is_manned, loc, vel);
 }
 
 uint32_t AP_Avoidance::src_id_for_adsb_vehicle(AP_ADSB::adsb_vehicle_t vehicle) const
@@ -258,9 +273,12 @@ void AP_Avoidance::get_adsb_samples()
         ::printf("Have another ADSB vehicle, ICAO: %d\n", vehicle.info.ICAO_address);
         uint32_t src_id = src_id_for_adsb_vehicle(vehicle);
         Location loc = _adsb.get_location(vehicle);
+        //bool manned = _adsb.is_manned(vehicle);
+        bool manned = AP_ADSB::is_manned(vehicle);
         add_obstacle(vehicle.last_update_ms,
                    MAV_COLLISION_SRC_ADSB,
                    src_id,
+                   manned,
                    loc,
                    vehicle.info.heading/100.0f,
                    vehicle.info.hor_velocity/100.0f,
@@ -541,6 +559,9 @@ void AP_Avoidance::handle_avoidance_local(AP_Avoidance::Obstacle *threat)
 }
 
 
+
+// TODO I'm not sure how this gets and what it represents
+// just going to assume other craft is manned so take stronger avoidance maneuvers
 void AP_Avoidance::handle_msg(const mavlink_message_t &msg)
 {
     if (!check_startup()) {
@@ -572,6 +593,7 @@ void AP_Avoidance::handle_msg(const mavlink_message_t &msg)
     add_obstacle(AP_HAL::millis(),
                  MAV_COLLISION_SRC_ADSB,
                  msg.sysid,
+                 true,              //is manned?
                  loc,
                  vel);
 }

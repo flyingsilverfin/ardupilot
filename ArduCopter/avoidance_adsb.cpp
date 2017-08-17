@@ -1,5 +1,6 @@
 #include "Copter.h"
 #include <AP_Notify/AP_Notify.h>
+#include <stdio.h>
 
 void Copter::avoidance_adsb_update(void)
 {
@@ -7,7 +8,6 @@ void Copter::avoidance_adsb_update(void)
     avoidance_adsb.update();
 }
 
-#include <stdio.h>
 
 MAV_COLLISION_ACTION AP_Avoidance_Copter::handle_avoidance(const AP_Avoidance::Obstacle *obstacle, MAV_COLLISION_ACTION requested_action)
 {
@@ -34,54 +34,62 @@ MAV_COLLISION_ACTION AP_Avoidance_Copter::handle_avoidance(const AP_Avoidance::O
         copter.init_disarm_motors();
         actual_action = MAV_COLLISION_ACTION_NONE;
     } else {
+        /*
+        NEW: use UAV-UAV avoidance if enabled and obstacle is not manned either
+        Idea is: take over control of copter's movement completely in the case of an manned aircraft approaching
+                 with another UAV can modify flight path without completely eliminating current control
+        */
+        if (is_diff_uav_avoid_set() && !obstacle->is_manned &&) {
+            ::printf("Entering UAV-UAV avoidance\n");
+        } else {
+            // take action based on requested action
+            switch (actual_action) {
 
-        // take action based on requested action
-        switch (actual_action) {
+                case MAV_COLLISION_ACTION_RTL:
+                    // attempt to switch to RTL, if this fails (i.e. flying in manual mode with bad position) do nothing
+                    if (failsafe_state_change) {
+                        if (!copter.set_mode(RTL, MODE_REASON_AVOIDANCE)) {
+                            actual_action = MAV_COLLISION_ACTION_NONE;
+                        }
+                    }
+                    break;
 
-            case MAV_COLLISION_ACTION_RTL:
-                // attempt to switch to RTL, if this fails (i.e. flying in manual mode with bad position) do nothing
-                if (failsafe_state_change) {
-                    if (!copter.set_mode(RTL, MODE_REASON_AVOIDANCE)) {
+                case MAV_COLLISION_ACTION_HOVER:
+                    // attempt to switch to Loiter, if this fails (i.e. flying in manual mode with bad position) do nothing
+                    if (failsafe_state_change) {
+                        if (!copter.set_mode(LOITER, MODE_REASON_AVOIDANCE)) {
+                            actual_action = MAV_COLLISION_ACTION_NONE;
+                        }
+                    }
+                    break;
+
+                case MAV_COLLISION_ACTION_ASCEND_OR_DESCEND:
+                    // climb or descend to avoid obstacle
+                    if (!handle_avoidance_vertical(obstacle, failsafe_state_change)) {
                         actual_action = MAV_COLLISION_ACTION_NONE;
                     }
-                }
-                break;
+                    break;
 
-            case MAV_COLLISION_ACTION_HOVER:
-                // attempt to switch to Loiter, if this fails (i.e. flying in manual mode with bad position) do nothing
-                if (failsafe_state_change) {
-                    if (!copter.set_mode(LOITER, MODE_REASON_AVOIDANCE)) {
+                case MAV_COLLISION_ACTION_MOVE_HORIZONTALLY:
+                    // move horizontally to avoid obstacle
+                    if (!handle_avoidance_horizontal(obstacle, failsafe_state_change)) {
                         actual_action = MAV_COLLISION_ACTION_NONE;
                     }
-                }
-                break;
+                    break;
 
-            case MAV_COLLISION_ACTION_ASCEND_OR_DESCEND:
-                // climb or descend to avoid obstacle
-                if (!handle_avoidance_vertical(obstacle, failsafe_state_change)) {
-                    actual_action = MAV_COLLISION_ACTION_NONE;
-                }
-                break;
+                case MAV_COLLISION_ACTION_MOVE_PERPENDICULAR:
+                    if (!handle_avoidance_perpendicular(obstacle, failsafe_state_change)) {
+                        actual_action = MAV_COLLISION_ACTION_NONE;
+                    }
+                    break;
 
-            case MAV_COLLISION_ACTION_MOVE_HORIZONTALLY:
-                // move horizontally to avoid obstacle
-                if (!handle_avoidance_horizontal(obstacle, failsafe_state_change)) {
-                    actual_action = MAV_COLLISION_ACTION_NONE;
-                }
-                break;
-
-            case MAV_COLLISION_ACTION_MOVE_PERPENDICULAR:
-                if (!handle_avoidance_perpendicular(obstacle, failsafe_state_change)) {
-                    actual_action = MAV_COLLISION_ACTION_NONE;
-                }
-                break;
-
-            // unsupported actions and those that require no response
-            case MAV_COLLISION_ACTION_NONE:
-                return actual_action;
-            case MAV_COLLISION_ACTION_REPORT:
-            default:
-                break;
+                // unsupported actions and those that require no response
+                case MAV_COLLISION_ACTION_NONE:
+                    return actual_action;
+                case MAV_COLLISION_ACTION_REPORT:
+                default:
+                    break;
+            }
         }
     }
 
