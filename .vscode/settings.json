@@ -94,6 +94,8 @@
         "iomanip": "cpp",
         "iterator_base": "cpp",
         "map": "cpp",
-        "set": "cpp"
+        "set": "cpp",
+        "cmath": "cpp",
+        "complex": "cpp"
     }
 }

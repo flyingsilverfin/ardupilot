@@ -39,8 +39,12 @@ MAV_COLLISION_ACTION AP_Avoidance_Copter::handle_avoidance(const AP_Avoidance::O
         Idea is: take over control of copter's movement completely in the case of an manned aircraft approaching
                  with another UAV can modify flight path without completely eliminating current control
         */
-        if (is_diff_uav_avoid_set() && !obstacle->is_manned &&) {
+        if (is_uav_avoid_set() && !obstacle->is_manned &&) {
             ::printf("Entering UAV-UAV avoidance\n");
+
+            
+
+
         } else {
             // take action based on requested action
             switch (actual_action) {
@@ -255,3 +259,6 @@ bool AP_Avoidance_Copter::handle_avoidance_perpendicular(const AP_Avoidance::Obs
     // if we got this far we failed to set the new target
     return false;
 }
+
+
+

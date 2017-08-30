@@ -27,6 +27,7 @@
 #include <limits.h>
 #include <AP_Vehicle/AP_Vehicle.h>
 #include <GCS_MAVLink/GCS.h>
+#include <AP_Math/AP_Math.h>
 
 #define VEHICLE_TIMEOUT_MS              5000   // if no updates in this time, drop it from the list
 #define ADSB_VEHICLE_LIST_SIZE_DEFAULT  25
@@ -344,6 +345,8 @@ void AP_ADSB::handle_vehicle(const mavlink_message_t* packet)
     bool is_tracked_in_list = find_index(vehicle, &index);
     uint32_t now = AP_HAL::millis();
 
+    _last_adsb_in = now;
+
     // note the last time the receiver got a packet from the aircraft
     vehicle.last_update_ms = now - (vehicle.info.tslc * 1000);
 
@@ -534,6 +537,17 @@ void AP_ADSB::send_dynamic_out(const mavlink_channel_t chan)
             emStatus,
             state,
             squawk);
+
+
+    // update last ADSB information sent
+    this_vehicle_last_out_state.last_update_ms = utcTime;
+    this_vehicle_last_out_state.info.lat = latitude;
+    this_vehicle_last_out_state.info.lon = longitude;
+    this_vehicle_last_out_state.info.altitude = altGNSS;
+    this_vehicle_last_out_state.info.heading = wrap_360_cd(100*degrees(atan2f(nsVog, ewVog)));
+    this_vehicle_last_out_state.info.hor_velocity = norm(ewVog, nsVog);
+    this_vehicle_last_out_state.info.ver_velocity = velVert;
+
 }
 
 void AP_ADSB::send_configure(const mavlink_channel_t chan)
@@ -670,4 +684,8 @@ void AP_ADSB::handle_message(const mavlink_channel_t chan, const mavlink_message
 
 bool AP_ADSB::is_manned(const adsb_vehicle_t &vehicle) {
     return vehicle.info.emitter_type ==  ADSB_EMITTER_TYPE_UAV;
+}
+
+adsb_vehicle_t* AP_ADSB::last_out_data(void) {
+    return &this_vehicle_last_out_state;
 }

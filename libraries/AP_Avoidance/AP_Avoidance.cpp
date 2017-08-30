@@ -18,7 +18,7 @@ extern const AP_HAL::HAL& hal;
     #define AP_AVOIDANCE_FAIL_DISTANCE_Z_DEFAULT        100
     #define AP_AVOIDANCE_RECOVERY_DEFAULT               AP_AVOIDANCE_RECOVERY_RESUME_IF_AUTO_ELSE_LOITER
     #define AP_AVOIDANCE_FAIL_ACTION_DEFAULT            MAV_COLLISION_ACTION_REPORT
-    #define AP_AVOID_ANCE_DIFF_UAV_AVOID                0
+    #define AP_AVOIDANCE_UAV_AVOID                0
 
 #else // APM_BUILD_TYPE(APM_BUILD_ArduCopter), Rover, Boat
     #define AP_AVOIDANCE_WARN_TIME_DEFAULT              30
@@ -29,7 +29,7 @@ extern const AP_HAL::HAL& hal;
     #define AP_AVOIDANCE_FAIL_DISTANCE_Z_DEFAULT        100
     #define AP_AVOIDANCE_RECOVERY_DEFAULT               AP_AVOIDANCE_RECOVERY_RTL
     #define AP_AVOIDANCE_FAIL_ACTION_DEFAULT            MAV_COLLISION_ACTION_REPORT
-    #define AP_AVOID_ANCE_DIFF_UAV_AVOID                0
+    #define AP_AVOIDANCE_UAV_AVOID                0
 #endif
 
 #if AVOIDANCE_DEBUGGING
@@ -38,6 +38,8 @@ extern const AP_HAL::HAL& hal;
 #else
 #define debug(fmt, args ...)
 #endif
+
+#define EARTH_RADIUS 6378137.0f   //meters
 
 // table of user settable parameters
 const AP_Param::GroupInfo AP_Avoidance::var_info[] = {
@@ -126,7 +128,7 @@ const AP_Param::GroupInfo AP_Avoidance::var_info[] = {
     // @Description: Treat manned and unmanned avoidance differently (copter only for now)
     // @Values: 0:False, 1: True
     // @User: Advanced
-    AP_GROUPINFO("UAV_AVOID",    12, AP_Avoidance, _diff_uav_avoid, AP_AVOID_ANCE_DIFF_UAV_AVOID),
+    AP_GROUPINFO("UAV_AVOID",    12, AP_Avoidance, _uav_avoid, AP_AVOIDANCE_UAV_AVOID),
 
     AP_GROUPEND
 };
@@ -155,12 +157,22 @@ void AP_Avoidance::init(void)
             return;
         }
         _obstacles_allocated = _obstacles_max;
+
+
+        if (_avoid_uav) {
+            init_uav_avoid();
+        }
     }
     _obstacle_count = 0;
     _last_state_change_ms = 0;
     _threat_level = MAV_COLLISION_THREAT_LEVEL_NONE;
     _gcs_cleared_messages_first_sent = std::numeric_limits<uint32_t>::max();
     _current_most_serious_threat = -1;
+}
+
+
+void AP_Avoidance::init_uav_avoid(void) {
+    uav_avoidance = new UAV_Avoidance(this);
 }
 
 /*
@@ -175,6 +187,10 @@ void AP_Avoidance::deinit(void)
         handle_recovery(AP_AVOIDANCE_RECOVERY_RTL);
     }
     _obstacle_count = 0;
+
+    if (uav_avoidance != nullptr) {
+        delete _uav_avoid;
+    }
 }
 
 bool AP_Avoidance::check_startup()
@@ -188,6 +204,9 @@ bool AP_Avoidance::check_startup()
     }
     if (_obstacles == nullptr)  {
         init();
+    }
+    if (_uav_avoid && uav_avoidance == nullptr) {
+        init_uav_avoid();
     }
     return _obstacles != nullptr;
 }
@@ -241,6 +260,10 @@ void AP_Avoidance::add_obstacle(const uint32_t obstacle_timestamp_ms,
     _obstacles[index].timestamp_ms = obstacle_timestamp_ms;
 
     _obstacles[index].is_manned = is_manned;
+
+
+
+    most_recent_update_ms = AP_HAL::millis();
 }
 
 void AP_Avoidance::add_obstacle(const uint32_t obstacle_timestamp_ms,
@@ -516,6 +539,10 @@ void AP_Avoidance::update()
 
     check_for_threats();
 
+    if (_uav_avoid) {
+        uav_avoidance.update();
+    }
+
     // notify GCS of most serious thread
     handle_threat_gcs_notify(most_serious_threat());
 
@@ -525,6 +552,13 @@ void AP_Avoidance::update()
 
 void AP_Avoidance::handle_avoidance_local(AP_Avoidance::Obstacle *threat)
 {
+    // if uav avoidance is enabled, defer to that for now
+    // TODO re-integrate manned avoidance below this case
+    if (_uav_avoid && !thread->is_manned) {
+        uav_avoidance.handle_avoidance(threat);
+        return;
+    }
+
     MAV_COLLISION_THREAT_LEVEL new_threat_level = MAV_COLLISION_THREAT_LEVEL_NONE;
     MAV_COLLISION_ACTION action = MAV_COLLISION_ACTION_NONE;
 
@@ -560,8 +594,6 @@ void AP_Avoidance::handle_avoidance_local(AP_Avoidance::Obstacle *threat)
 
 
 
-// TODO I'm not sure how this gets and what it represents
-// just going to assume other craft is manned so take stronger avoidance maneuvers
 void AP_Avoidance::handle_msg(const mavlink_message_t &msg)
 {
     if (!check_startup()) {
@@ -593,7 +625,7 @@ void AP_Avoidance::handle_msg(const mavlink_message_t &msg)
     add_obstacle(AP_HAL::millis(),
                  MAV_COLLISION_SRC_ADSB,
                  msg.sysid,
-                 true,              //is manned?
+                 true,              // Addition Joshua Send: just going to assume these here are manned...
                  loc,
                  vel);
 }
@@ -658,4 +690,31 @@ Vector2f AP_Avoidance::perpendicular_xy(const Location &p1, const Vector3f &v1, 
     Vector2f v1n(v1[0],v1[1]);
     Vector2f ret_xy = Vector2f::perpendicular(delta_p_n, v1n);
     return ret_xy;
+}
+
+
+
+/*
+    modifies Location as 1e7 coordinates and cm altitude
+*/
+void AP_Avoidance::Obstacle::position_in(uint32_t ms, Location &loc) {
+    uint32_t obstacle_age = AP_HAL::millis() - timestamp_ms;
+    uint32_t t = obstacle_age + ms;
+    
+    // velocity is all m/s
+    float dx = _velocity.x * ms/1000.0f;   // positive is north
+    float dy = _velocity.y * ms/1000.0f;   // positive is east
+    float dAlt = -1 * _velocity.z * ms/1000.0f; // positive velocity is DOWN I believe
+    // now positive is up
+
+    /*
+    horizontal offset in meters to GPS from
+    http://gis.stackexchange.com/questions/2951/algorithm-for-offsetting-a-latitude-longitude-by-some-amount-of-meters
+    */
+    int32_t dLat = dy/EARTH_RADIUS * 1e7;
+    int32_t dLon = dx/(EARTH_RADIUS*cos(3.141592f*_location.lat/180)) * 1e7;
+
+    loc.lat = _location.lat + dLat; // in GPS*1e7
+    loc.lon = _location.lon + dLon; // in GPS*1e7
+    loc.alt = _location.alt + dAlt*100f; //in cm
 }

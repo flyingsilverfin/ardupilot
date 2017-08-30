@@ -76,6 +76,10 @@ public:
 
 
     static bool is_manned(const adsb_vehicle_t &vehicle);
+    AP_ADSB::basic_abds_out_data last_out_data(void);
+    uint32_t last_adsb_in() { 
+        return _last_adsb_in; 
+    }
 
 private:
 
@@ -161,6 +165,10 @@ private:
         } cfg;
 
     } out_state;
+
+
+    adsb_vehicle_t this_vehicle_last_out_state; // hold on to the data from the last ADSB out message
+    uint32_t _last_adsb_in;
 
 
     // index of and distance to furthest vehicle in list

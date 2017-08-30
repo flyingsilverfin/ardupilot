@@ -61,7 +61,10 @@ public:
         float time_to_closest_approach; // seconds, 3D approach
         float distance_to_closest_approach; // metres, 3D
         uint32_t last_gcs_report_time; // millis
+
+        Location position_in(float ms); // get this Obstacle's position in ms milliseconds
     };
+
 
     // constructor
     AP_Avoidance(AP_AHRS &ahrs, class AP_ADSB &adsb);
@@ -144,8 +147,10 @@ protected:
 
 
 
-    //TODO tmp getter for parameters, probably a convention for this via central parameters store?
-    bool is_diff_uav_avoid_set() { return _diff_uav_avoid; }
+    //NEW
+    bool is_uav_avoid_set() { return uav_avoid; }
+    void check_conflict_zones();
+
 
 private:
 
@@ -188,6 +193,11 @@ private:
     int8_t _current_most_serious_threat;
     MAV_COLLISION_ACTION _latest_action = MAV_COLLISION_ACTION_NONE;
 
+    //UAV avoidance
+    friend class UAV_Avoidance;
+    UAV_Avoidance uav_avoidance;
+    uint32_t most_recent_update_ms;
+
     // external references
     class AP_ADSB &_adsb;
 
@@ -222,3 +232,7 @@ float closest_approach_z(const Location &my_loc,
                          const Location &obstacle_loc,
                          const Vector3f &obstacle_vel,
                          uint8_t time_horizon);
+
+
+
+
