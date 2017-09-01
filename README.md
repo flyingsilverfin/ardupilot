@@ -21,18 +21,19 @@ One key takeaway from all this is the standardization of [ADS-B](https://en.wiki
 
 ### Past work
 
-*Two papers from 1997 with some basic but interesting ideas [here](http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.533.7928&rep=rep1&type=pdf) and [here](http://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=657844)
-*[This Paper](https://link.springer.com/article/10.1007/s10514-013-9334-3) from 2013
-  *It uses something called an RRT or rapidly exploring random tree
-  *The paper developing this is somewhat older but the core features are widely used
-  *I figure these are a bit too expensive to do on a small flight controller, but are perhaps feasible soon
-*Speaking of RRTs, a 2015 paper combined ADSB and RRTs for collision avoidance: [here](https://asu.pure.elsevier.com/en/publications/sense-and-avoid-for-unmanned-aerial-vehicles-using-ads-b-2)
+
+* Two papers from 1997 with some basic but interesting ideas [here](http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.533.7928&rep=rep1&type=pdf) and [here](http://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=657844)
+* [This Paper](https://link.springer.com/article/10.1007/s10514-013-9334-3) from 2013
+  * It uses something called an RRT or rapidly exploring random tree
+  * The paper developing this is somewhat older but the core features are widely used
+  * I figure these are a bit too expensive to do on a small flight controller, but are perhaps feasible soon
+* Speaking of RRTs, a 2015 paper combined ADSB and RRTs for collision avoidance: [here](https://asu.pure.elsevier.com/en/publications/sense-and-avoid-for-unmanned-aerial-vehicles-using-ads-b-2)
 
 There are many more papers in this field. One thorough overview can be found in suveys. A recent one is [this 2015 one](http://www.sciencedirect.com/science/article/pii/S0376042115000020) which does a good job categorizing force-field methods, cooperative, a bunch of decision methods, genetic algorithm etc. [This other one](https://link.springer.com/chapter/10.1007%2F978-3-319-17765-6_18) is less thorough but focuses more on collision avoidance rather than path planning. Quick note: path planning can solve collision avoidance, but collision avoidance can be reactive and only deviate when sensing an obstacle (*sense and avoid*). We also want to think about approaches that are decentralized, as we only have one way communication via ADS-B.
 
 ### Project
 
-As a result of all this work, it's hard for newcomers to try to invent something original - I decided to evaluate the existing collision avoidance in ArduPilot. Just as I mostly finished the framework for this (see [Framework][#framework]) what I think is a novel idea I outline at the end of this document.
+As a result of all this work, it's hard for newcomers to try to invent something original - I decided to evaluate the existing collision avoidance in ArduPilot. Just as I mostly finished the framework for this (see [Framework](#framework)) what I think is a novel idea I outline at the end of this document.
 
 
 ## Evaluation 
@@ -58,18 +59,20 @@ Start page is [here](http://ardupilot.org/dev/docs/building-the-code.html), and 
 
 The key steps that need to be run after cloning the repository are
 1. The prerequisites script `Tools/scripts/install-prereqs-ubuntu.sh`
-  *this sets ups various required tools, initializes git submodules (for instance pymavlink) and some other stuff
+  * this sets ups various required tools, initializes git submodules (for instance pymavlink) and some other stuff
 1. `waf configure --board sitl --debug`
-  *Run this from the ArduPilot root director.y `waf` is the build platform used by ArduPilot. Don't use `make` - it's deprecated. This step sets up the build to compile the SITL target in debug mode (see (Debuging)[#debugging]), which lets you use gdb to debug later if you want. Very useful sometimes I've found!
+  * un this from the ArduPilot root director.y `waf` is the build platform used by ArduPilot. Don't use `make` - it's deprecated. This step sets up the build to compile the SITL target in debug mode (see (Debuging)[#debugging]), which lets you use gdb to debug later if you want. Very useful sometimes I've found!
 1. `waf build --target bin/arducopter -v -j8 --debug`
-  *This bulds the `arducopter` binary in verbose mode using up to 8 threads. The resulting binary should be under `build/sitl-debug/bin/arducopter`
+  * This bulds the `arducopter` binary in verbose mode using up to 8 threads. The resulting binary should be under `build/sitl-debug/bin/arducopter`
 
 
 #### Running SITL firmware with debugging 
 I've found this really useful! Run `gdb` with the `sitl-debug` binary like this:
 
-```gdb --args ~/dev/ardupilot/build/sitl-debug/bin/arducopter -S -I1 --home -35.663261,149
-.165230,584,353 --model + --speedup 1 --defaults ~/dev/ardupilot/tests/avoidance_evaluation/copter_parameters/copter_params_1.parm --wipe```
+```
+gdb --args ~/dev/ardupilot/build/sitl-debug/bin/arducopter -S -I1 --home -35.663261,149
+.165230,584,353 --model + --speedup 1 --defaults ~/dev/ardupilot/tests/avoidance_evaluation/copter_parameters/copter_params_1.parm --wipe
+```
 
 This launches gdb with the rest of the parameters as the command to run. When `run` is executed in gdb, we get the SITL instance running as instance `1`, at the given GPS coordinates, altitude (meters), and heading (degrees from true North). The `model +` tells it to use a quadcopter frame, run with speedup 1, and default parameters given. Wipe tell is to wipe any stored parameters and state and use the defaults for everything.
 
