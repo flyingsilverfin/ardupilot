@@ -55,15 +55,15 @@ Briefly, the key components that will be used while running simulated vehicles a
 #### Build SITL
 You don't actually need to do this manually, there's a script `Tools/autotest/sim_vehicle.py` which will do the build and all that for you. However, I like to split the commands `sim_vehicle` runs (ie. an instance of SITL and an instance of MAVProxy as a ground station) so I can say run the SITL instance within `gdb` for debugging purposes.
 
-Start page is [here](http://ardupilot.org/dev/docs/building-the-code.html), and for SITL is [here](http://ardupilot.org/dev/docs/setting-up-sitl-on-linux.html). I used BashOnWindows which is more or less equivalent to linux for my purposes - using an X server like MingW to run the graphical interfaces if needed on windows.
+Start page is [here](http://ardupilot.org/dev/docs/building-the-code.html), and for SITL is [here](http://ardupilot.org/dev/docs/setting-up-sitl-on-linux.html). I used BashOnWindows which is more or less equivalent to linux for my purposes - using an X server like XMing to run the graphical interfaces if needed on windows.
 
 The key steps that need to be run after cloning the repository are
 1. The prerequisites script `Tools/scripts/install-prereqs-ubuntu.sh`
-    this sets ups various required tools, initializes git submodules (for instance pymavlink) and some other stuff
+    * this sets ups various required tools, initializes git submodules (for instance pymavlink) and some other stuff
 1. `waf configure --board sitl --debug`
-    un this from the ArduPilot root director.y `waf` is the build platform used by ArduPilot. Don't use `make` - it's deprecated. This step sets up the build to compile the SITL target in debug mode (see (Debuging)[#debugging]), which lets you use gdb to debug later if you want. Very useful sometimes I've found!
+    * un this from the ArduPilot root director.y `waf` is the build platform used by ArduPilot. Don't use `make` - it's deprecated. This step sets up the build to compile the SITL target in debug mode (see (Debuging)[#debugging]), which lets you use gdb to debug later if you want. Very useful sometimes I've found!
 1. `waf build --target bin/arducopter -v -j8 --debug`
-    This bulds the `arducopter` binary in verbose mode using up to 8 threads. The resulting binary should be under `build/sitl-debug/bin/arducopter`
+    * This bulds the `arducopter` binary in verbose mode using up to 8 threads. The resulting binary should be under `build/sitl-debug/bin/arducopter`
 
 
 #### Running SITL firmware with debugging 
@@ -101,7 +101,21 @@ In MAVProxy you can also also adjust a lot of parameters that affect the flight 
 The other parameters I set in those files relate to enabling ADSB simulation, as well as enabling the built in obstacle avoidance. The main file is `copter_params.parm` which, upon running the `generate_params.py` script in the folder copies it with correct id's.
 
 
+#### Summary ####
+
+Cool! Everything above is related to general Ardupilot, SITL, Mavproxy stuff. Next up is modifications and scripts I've written. More documentation in the code itself.
+
 ### Framework
+
+#### Overview ####
+
+NOTE: all my work is on the **summer_2017_jsend** branch of this fork! Ie. if you're seeing this, you're good!
+
+The first step is to let multiple SITL instances talk to each other over ADS-B. The architecture I ended up with is in the image below:
+
+![architecture](tests/avoidance_evaluation/architecture_filled_in.jpg)
+
+
 
 BRANCH xxx
 
