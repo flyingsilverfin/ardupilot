@@ -59,11 +59,11 @@ Start page is [here](http://ardupilot.org/dev/docs/building-the-code.html), and 
 
 The key steps that need to be run after cloning the repository are
 1. The prerequisites script `Tools/scripts/install-prereqs-ubuntu.sh`
-    * this sets ups various required tools, initializes git submodules (for instance pymavlink) and some other stuff
+    this sets ups various required tools, initializes git submodules (for instance pymavlink) and some other stuff
 1. `waf configure --board sitl --debug`
-    * un this from the ArduPilot root director.y `waf` is the build platform used by ArduPilot. Don't use `make` - it's deprecated. This step sets up the build to compile the SITL target in debug mode (see (Debuging)[#debugging]), which lets you use gdb to debug later if you want. Very useful sometimes I've found!
+    un this from the ArduPilot root director.y `waf` is the build platform used by ArduPilot. Don't use `make` - it's deprecated. This step sets up the build to compile the SITL target in debug mode (see (Debuging)[#debugging]), which lets you use gdb to debug later if you want. Very useful sometimes I've found!
 1. `waf build --target bin/arducopter -v -j8 --debug`
-    * This bulds the `arducopter` binary in verbose mode using up to 8 threads. The resulting binary should be under `build/sitl-debug/bin/arducopter`
+    This bulds the `arducopter` binary in verbose mode using up to 8 threads. The resulting binary should be under `build/sitl-debug/bin/arducopter`
 
 
 #### Running SITL firmware with debugging 
