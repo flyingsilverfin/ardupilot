@@ -46,6 +46,7 @@
 .tags
 .tags_sorted_by_file
 .vagrant
+.vscode
 APMrover2/test.APMrover2/
 APMrover2/way.txt
 ArduCopter/Debug/
