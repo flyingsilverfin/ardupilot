@@ -52,7 +52,7 @@ Ardupilot is a firmware that can control copters, planes, rovers, subs and more.
 
 Briefly, the key components that will be used while running simulated vehicles are a build of the ArduPilot targeting `SITL` as a platform. Normally, an instance can then be started and communicated with using a `MavProxy` instance, which is a *Ground Station* capable of controlling the UAV over some sort of communication link. The communication link runs a protocol called `MAVLink` (in fact, basically all communication to do with UAVs will be MAVlink including on the drone itself). Python scripts communicating with a drone can use a python wrapper for `mavlink` called `pymavlink`. A even higher level library called `DroneKit` provides a nice API for simple movement commands - I use this as a pretend onboard computer (which might be a raspberry pi) which communicates with the drone and tells it what to do - for instance go to the next waypoint.
 
-#### Build SITL
+#### Build ArduPilot SITL
 You don't actually need to do this manually, there's a script `Tools/autotest/sim_vehicle.py` which will do the build and all that for you. However, I like to split the commands `sim_vehicle` runs (ie. an instance of SITL and an instance of MAVProxy as a ground station) so I can say run the SITL instance within `gdb` for debugging purposes.
 
 Start page is [here](http://ardupilot.org/dev/docs/building-the-code.html), and for SITL is [here](http://ardupilot.org/dev/docs/setting-up-sitl-on-linux.html). I used BashOnWindows which is more or less equivalent to linux for my purposes - using an X server like XMing to run the graphical interfaces if needed on windows.
@@ -107,24 +107,49 @@ Cool! Everything above is related to general Ardupilot, SITL, Mavproxy stuff. Ne
 
 ### Framework
 
+The firmware comes with a bit of code which generates fake 'flights' - but these aren't other simulated copters or planes that act independently. See [here](http://ardupilot.org/copter/docs/common-ads-b-receiver.html)
+
 #### Overview ####
 
-NOTE: all my work is on the **summer_2017_jsend** branch of this fork! Ie. if you're seeing this, you're good!
+NOTE: this portion my work is on the **summer_2017_jsend** branch of this fork! Ie. if you're seeing this, you're good!
 
-The first step is to let multiple SITL instances talk to each other over ADS-B. The architecture I ended up with is in the image below:
+The first step is to let multiple actual SITL instances talk to each other over ADS-B. The architecture I ended up with is in the image below:
 
 ![architecture](tests/avoidance_evaluation/architecture_filled_in.jpg)
 
+Dronekit instances (Python) control each simulated copter. This includes controlling takeoff, waypoints, speed etc. The firmware running is agnostic to the platform (could be Pixhawk, native linux etc.). To enable this, the HAL (hardware abstraction layer) we built here is called HAL_SITL, a specific abstraction layer for software in the loop simulations. One relevant aspect of this is that the `UART_Driver` component knows to connect to a Socket rather than an actual hardware device. The other end of this socket ends up in the simulation portion, specifically connected to `SIM_ADSB`. I've modified `SIM_ADSB` to better model an actual ADSB transceiver, and it now forwards `mavlink_msg_adsb_vehicle` messages to a python script `ADSB_connector.py`. For comparision, in real flights messages travel from the proprietary UAVIONIX transceiver over the air to other receivers, arriving back in `AP_ADSB` as `mavlink_msg_adsb_vehicle`). The python script passes these messages back to all other simulations running at the time. By routing through an external script we could easily incorporate packet loss rates (skip forwarding sometimes), and out of range functionality (don't forward if gps coordinates are too far apart).
+
+The parameter settings that SITL instances are loaded with means that a `log` directory should be found, with one folder per experiment and within that one directory per instance. The resulting position logs are analyzed by a separate script.
+
+If you want to delve into the ArduPilot source, here's a list of relevant locations:
+* [libraries/AP_ADSB](libraries/AP_ADSB)
+* [libraries/AP_Avoidance](libraries/AP_Avoidance)
+* [libraries/SITL](libraries/SITL)  Notably the SIM_ADSB files in there
+* [libraries/AP_HAL_SITL](libraries/AP_HAL_SITL) The UARTDriver here is one part of the abstraction. Rather than trying to dive through all of this manually as I did once I recommend using `gdb` to attach a breakpoint somewhere and checking the stack trace.
+
+### Experiment Creation, Running, and analysis
+
+These scripts are located under [tests/avoidance_evaluation](tests/avoidance_evaluation). 
+
+See the README there for more details!
+
+The intended usage is: 
+1. generate experiment(s)
+2. run experiments
+3. analyze logs
 
 
-BRANCH xxx
+### Existing Collision Avoidance 
 
-### Dronekit
+I realized at one point that the existing collision avoidance built into `AP_Avoidance` is a *failsafe*. In other words, it takes over complete control if it detects danger (configurable via the parameters `AVD_*` - to access most of these you may need to set `AVD_ENABLE` to `1`, and then run `param fetch`).
 
-## Existing Collision Avoidance 
-It was realized that the existing collision avoidance provides no path planning or avoidance capabilities that allow progress toward an existing goals while avoidance is in progress: the avoidance system is failsafe that kicks in and takes over to avoid a threat.
- (responses include stop and hover, land, or run away perpendicularly from a threat's path)
+The end result is that you cannot make progress toward your goal or retain control while the failsafe has kicked in. The failsafe behavior is settable via a parameter, ranging from landing to flying away perpendicularly from the incoming object's flight path. 
 
+I believe this approach is great for avoiding manned aircraft - in the interest of minimizing risk to humans, the best thing to do is run away from the incoming aircraft. However, this is too restrictive for drone-drone interactions and continue to make progress toward our goal while also avoiding other vehicles. My new idea for achieving this is discussed in the next section.
+
+The failsafe built into ArduPlot essentially does a straight line projection of the current vehicle and up to N other vehicles it tracks via their ADSB messages. A forward projection up to a time horizon predicts the closest a vehicle comes. The most imminent threat is then taken action against if it is predicted to approach within some radius. This highly effective approach in avoiding conflict can largely be analyzed analytically; it can really only be beaten if given a relative velocity *v*, with an adsb update period of *t* and avoidance radius of *r*, _v*t > r_.
+
+As a result of these realizations I spent my last week considering an N-Body avoidance algorithm developed further below.
 
 ## N-Body Avoidance idea 
 Branch xxx
