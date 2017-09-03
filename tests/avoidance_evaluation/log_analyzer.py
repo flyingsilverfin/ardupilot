@@ -286,7 +286,7 @@ class ExperimentAnalyzer():
             print v.get_analysis()     # could do something else here, return it or something
 
 if __name__ == '__main__':
-    if len(sys.argv) < 1:
+    if len(sys.argv) <= 1:
         print("Need to provide directory of experiment logs (will contain many vehicle_* subdirectories)")
     directory = sys.argv[1]
     analyzer = ExperimentAnalyzer(directory)

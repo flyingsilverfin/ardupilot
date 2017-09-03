@@ -7,3 +7,5 @@ In this directory you'll find:
 1. `experiment_runner.py` reads a `plan.json` file and executes commands indicated. Spawns the required number of SITL (spawned off) and Dronekit (internal) instances required.
 1. `generate_experiment.py` a larger script which generates experiments. It's a bit of a mess since it evolved from an interactive script to help fill out a skeleton by hand to a fully automatic one which generates a given type of collision. Explained further below.
 1. `log_analyzer.py` Reads logs produced by each SITL instance, and finds the closest each copter gets to another. This could be extended in the future. I might add a component which spits out XML path files for a graphical view of flight paths in google earth - mission planner already has a feature doing this for one log a time I believe!
+
+I've tried to document these as I could in the code. The most complicated is likely the `generate_experiment.py` script.

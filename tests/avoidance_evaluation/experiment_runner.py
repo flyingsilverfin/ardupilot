@@ -8,23 +8,33 @@ import subprocess
 from multiprocessing.dummy import Pool as ThreadPool
 import time
 import threading
-import math
+from math import radians, cos, sin, sqrt
 
 CONNECTION_IP = '127.0.0.1'
 DISTANCE_TOLERANCE = 0.5 # must be this far from a point to be considered "there"
 FNULL = open(os.devnull, 'w')   # equivalent to > /dev/null
 
+EARTH_RAD = 6378137.0
 
-def dist(loc1, loc2):
+
+def dist(p1, p2):
     """
-    This method is an approximation, and will not be accurate over large distances and close to the
-    earth's poles. It comes from the ArduPilot test code:
-    https://github.com/diydrones/ardupilot/blob/master/Tools/autotest/common.py
+    Calculate the great circle distance between two points 
+    on the earth (specified in decimal degrees)
     """
-    dlat = loc2[0] - loc1[0]
-    dlong = loc2[1] - loc1[1]
-    dist = math.sqrt((dlat*dlat) + (dlong*dlong)) * 1.113195e5
-    return dist
+    lat1, lon1, alt1 = p1
+    lat2, lon2, alt2 = p2
+    # convert decimal degrees to radians 
+    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+
+    # haversine formula 
+    dlon = lon2 - lon1 
+    dlat = lat2 - lat1 
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a)) 
+    horizontal_dist = c * EARTH_RAD
+    return sqrt(horizontal_dist**2 + (alt2-alt1)**2)    # straight line approx works well enough over short distances
+
 
 class VehicleCommander():
     def __init__(self, id, vehicle, home, flight_plan, forwarder):
@@ -34,7 +44,7 @@ class VehicleCommander():
         self.id = id
         self.forwarder = forwarder
         
-        self.vehicle.parameters['SYSID_THISMAV'] = id
+        self.vehicle.parameters['SYSID_THISMAV'] = id   #this is now unncessary but can't hurt...
 
         self.vehicle.add_message_listener('*', self.msg_listener)
 
@@ -48,7 +58,6 @@ class VehicleCommander():
             
 
     def run(self):
-        print "connect now!"
         time.sleep(5)
         v = self.vehicle
         while not v.is_armable:
@@ -192,6 +201,7 @@ class VehicleRunner():
 
 # used to forward to a GCS for visualization
 # combines different mavlink streams into one
+# forward to mission planner or qgroundcontrol to see real time positions
 class MavlinkJoiner():
     def __init__(self, destination_addresses):
         self.forward_to = destination_addresses
@@ -231,7 +241,7 @@ class ExperimentRunner():
             self.plan = json.load(plan_file)
         self.vehicles = []
         self.pool = ThreadPool(len(self.plan['vehicles'])) 
-        self.forwarder = MavlinkJoiner(["udpout:127.0.0.1:3002"]) #hook up ground station for multi-vehicle visualisation
+        self.forwarder = MavlinkJoiner(["udpout:127.0.0.1:3002"]) #hook up ground station for multi-vehicle visualisation on port 3002!
         if run_when_ready:
             self.run()
 
@@ -241,6 +251,7 @@ class ExperimentRunner():
             num = int(key)
             self.vehicles.append(VehicleRunner(self.experiment_name, num, self.plan['vehicles'][key], self.forwarder))
 
+        # these need to be run in separate threads or else we get blocking until the last vehicle has finished! BAD
         self.pool.map(self._exec, self.vehicles)
 
     def _exec(self, vehicle):
@@ -258,8 +269,8 @@ if __name__ == '__main__':
     else:
         filename = args[1]
         runner = ExperimentRunner(filename, run_when_ready=False)
-        waiting = raw_input("Press enter to begin!")
+        waiting = raw_input("Press enter to begin! Connect Mission Planner or Qgroundcontrol or other on port 3002 to see visualization of movement")
         runner.run()
-        waiting = raw_input()
+        waiting = raw_input("May exit if press enter now... unreliable. Use pkill.")
         runner.exit()
 
