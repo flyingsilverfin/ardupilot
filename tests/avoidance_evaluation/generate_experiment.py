@@ -2,17 +2,9 @@
 Basic Experiment features:
     N Vehicles, each with
      Home position
-     List of waypoints in GPS (lat, lng, altitude)
+     List of waypoints in GPS (lat, lng, altitude) with speed to get there
      instance number
      relevant ports (for mavproxy, dronekit)
-
-
-
-Extended
-    Circle
-    speed adjustments per waypoint
-
-
 """
 
 import ast
@@ -26,6 +18,7 @@ import sys
 from operator import add
 import argparse
 
+#this is the default aircraft home when spawned
 DEFAULT_HOME = (-35.663261, 149.165230, 584, 0)   #(lat, lng, altitude (meters), heading - vs North)
 DEFAULT_TAKEOFF = 30        #default height to takeoff to do maneuvers
 
@@ -34,6 +27,8 @@ USE_ALL_DEFAULTS = False
 EARTH_RAD = 6378137.0 #Radius of "spherical" earth
 
 instance = None
+
+# ----- helper functions -----
 
 def rad_to_deg(rad):
     return (rad/pi) * 180
@@ -48,7 +43,8 @@ def meters_to_lat(meters):
 def meters_to_lng(original_location, meters):
     dLng = meters/(EARTH_RAD*cos(pi*original_location[0]/180))
     return rad_to_deg(dLng)
-    
+
+# get a normally distributed number with params mean and stddev
 def get_normal(mean, stddev):
     if stddev == 0:
         return mean
@@ -60,6 +56,8 @@ def random_perturb_horizontal(pos, meters):
     extended = perturbation + [0]*(len(pos) - 2)
     return map(add, pos, extended)
 
+
+# given two (lat, lon, altitude) pairs calculate their distance in meters plus the angle from p1 to p2
 def get_distance_angle(p1, p2):
     """
     Calculate the great circle distance between two points 
@@ -86,7 +84,7 @@ def get_distance_angle(p1, p2):
     angle = atan2(dx, dlat)
     return (dist, angle)
 
-
+# given a GPS coordinate, find the coordinate a certain number of meters in the East/West and North/South direction
 def get_location_metres(original_location, dNorth, dEast):
     """
     The algorithm is relatively accurate over small distances (10m within 1km) except close to the poles.
@@ -102,9 +100,10 @@ def get_location_metres(original_location, dNorth, dEast):
     newlat = original_location[0] + (dLat * 180/pi)
     newlon = original_location[1] + (dLon * 180/pi)
     
-    return (newlat, newlon);
+    return (newlat, newlon)
 
 #0 degrees is true north, 180deg is south
+# similar to above, but provides a  GPS coordinate a distance in a certain direction
 def gps_from(start, distance, angle_deg):
     angle_rad = deg_to_rad(float(angle_deg))
     dy = distance*cos(angle_rad)
@@ -112,6 +111,11 @@ def gps_from(start, distance, angle_deg):
     print dy, dx, angle_rad
     return get_location_metres(start, dy, dx)
 
+
+# ----- classes for generating a certain kind of collision -----
+
+
+# pretty useless container for flying straight line segments
 class StraightLine():
     def __init__(self, id, home):
         self.id = id
@@ -132,6 +136,8 @@ class StraightLine():
 
     def get_home(self):
         return self.home
+
+# Could imagine other segments with arcs etc. but these are actually pretty hard to do
 
 class Hovering():
     def __init__(self, id, home, height, speed=5):
@@ -155,6 +161,10 @@ class Hovering():
     def get_home(self):
         return self.home
 
+
+#generate N vehicles, of which vehicle 0 is hovering and the rest are position on a circle around
+# their distances are controlled by a random variable with average distance and variance given. 
+# 0 variance = equidistant
 class Hover_LineInto():
     def __init__(self, n_line=1, av_dist=30, dist_variance=0):
         n_line = int(n_line)
@@ -164,20 +174,24 @@ class Hover_LineInto():
         self.av_dist = av_dist
         self.dist_variance = dist_variance
 
+        #add a random pertubation to default home so not always in exact same place
         self.home = random_perturb_horizontal(DEFAULT_HOME, 20)
         self.vehicles = {}
         self.vehicles[0] = Hovering(0, self.home, DEFAULT_TAKEOFF)
 
-        print self.vehicles[0].home, self.vehicles[0].waypoints
+        #print self.vehicles[0].home, self.vehicles[0].waypoints
 
         self.target_height = self.vehicles[0].get_target_height()
 
         for i in range(1, 1 + n_line):
+            # get GPS coordinates of start position on the circle for this vehicle
             v_home = self.start_pos_latlng(i)
             v_home += (self.home[2], 0) #append height, heading
+            # initialize the vehicle
             v = StraightLine(i, v_home)
             (dist, angle) = get_distance_angle(self.home, v.home)
-            print dist, angle, "\n"
+            #print dist, angle, "\n"
+            # add a new segment going through hovering position to the opposite side of the circle
             (new_lat, new_lng) = gps_from(v.home, dist*2, 180+rad_to_deg(angle))
             v.line_to((new_lat, new_lng, self.vehicles[0].get_target_height()))
             self.vehicles[i] = v
@@ -215,9 +229,37 @@ class Hover_LineInto():
 #   --------------------------------------------------------
 
 
+"""
 
+    The dictionaries below are what I think is a pretty neat way of generating a JSON settings file
+    They essentially form a tree of settings, options etc. that need to be set
+    They are parsed further down. The last Dictionary is a the root
+
+    This initially was meant for an interactive terminal menu but evolved into automation-capable system
+
+    To enable this the 'default' option can be a lambda which takes arguments
+        arguments are specified in 'default_args'. Similar in format to 'suboption_args', these can be of two forms for now:
+            'arg:x' - this tells the parser to take the argument x passed in from the parent node
+            'this:y' - tells the parser to retrieve the value y set in a sibling prompt (ie. in the same)
+
+    Similar to 'default', we have 'suboption', which means this option needs to be recursively explored
+        When getting information in the suboption, there may be questions which have defaults with lambdas which need arguments
+        These arguments are passed in, as described as above
+        An enumerator _n is passed in as well if it's a repeated suboption (for example for waypoints)
+
+    The last important aspect is 'return'
+        This is specified for options which ask for suboptions to be explored
+        currently I'm using 'dict_to_list' and 'use_enumerated_dict'
+            'dict_to_list' requires that 'return_params' also be set: this contains an order in which keys are extracted into the list
+    
+    The comments annotating the options should help understand what's going on I hope
+    A typed language would've made debugging this much easier :/
+"""
+
+
+# options for home lat/lng/altitude/heading
 home_options = {
-    '_order': ['lat', 'lng', 'alt', 'heading'],
+    '_order': ['lat', 'lng', 'alt', 'heading'],         # order to request the data in this options dictionary
     'lat': {
         'prompt': 'Home Latitude',
         'type': float,
@@ -240,6 +282,8 @@ home_options = {
     }
 }
 
+# options for setting any waypoint
+# defaults take three arguments: the home position set, the ID of this vehicle, and which waypoint is currently being set
 position_options = {
     '_order': ['lat', 'lng', 'alt'],
     'lat': {
@@ -249,7 +293,7 @@ position_options = {
         'default_args': 'arg:home, arg:id, arg:num_waypoint'
     },
     'lng': {
-        'prompt': 'ongitude',
+        'prompt': 'Longitude',
         'type': float,
         'default': lambda home, id, n: home[1] + random.uniform(0.0001, 0.001),
         'default_args': 'arg:home, arg:id, arg:num_waypoint'
@@ -264,18 +308,23 @@ position_options = {
 
 
 
+#   To make the original setup work with the class-based approach to creating flight plans with specific conflicts
+#   These functions are called by the defaults lambdas
+#   They use the global 'instance' of say Hover_LineInto and get the required data from the instance
+
+# this function, given a home location, id either generates the next waypoint randomly, or gets the next waypoint from 'instance'
 def get_waypoint(home, id, n):
     if instance is None:
         return map(add, home[:3], (random.uniform(0.0001, 0.001), random.uniform(0.0001, 0.001), DEFAULT_TAKEOFF))
     else:
-        return list(instance.get_waypoint(id, n)["waypoint"])   #list cast is required!
+        return list(instance.get_waypoint(id, n)["waypoint"])   #list cast is required - JSON doesn't do Tuples
+# similar to above, except it gets the speed
 def get_speed_to_waypoint(id, n):
     if instance is None:
         return 5
     else:
         return instance.get_waypoint(id, n)["speed_to"]
 
-#NOTE: the default here never gets used. TODO/BUG: default needs to be reproduced next level down
 plan_options = {
     '_order': ['waypoint', 'speed_to'],
     'waypoint': {
@@ -315,7 +364,7 @@ per_vehicle_options = {
 #NOTE: the default here never gets used. TODO/BUG: default needs to be reproduced next level down
     'home': {
         'prompt': '  Enter home location (enter for default, 4-tuple directly, anything else to prompt further)',
-        'type': [[list, 4, float], str],    # prioritized list of parse options
+        'type': [[list, 4, float], str],    # prioritized list of allowed type options
         'default': lambda vehicle: get_default_home(vehicle),
         'default_args': 'arg:_n',
         'suboptions': home_options,
@@ -326,12 +375,12 @@ per_vehicle_options = {
         'prompt': '  Master port',
         'type': int,
         'default': lambda instance: 5760 + 10*instance,
-        'default_args': 'arg:_n'
+        'default_args': 'arg:_n' # use parent argument 'instance'
     },
     'sitl_port': {
         'prompt': '  SITL port',
         'type': int,
-        'default': lambda instance: 5501 + 10*instance,     #include check later, if type(default) == type(lambda: 1) #5501 is SITL base port, higher instances use 10*i + base
+        'default': lambda instance: 5501 + 10*instance,
         'default_args': 'arg:_n' # use parent argument 'instance'
     },
     'extra_out_ports': {
@@ -355,10 +404,10 @@ per_vehicle_options = {
         'type': str,
         'default': lambda instance: 'sim_' + str(instance),
         'default_args': 'arg:_n'
-    }
-    
+    }   
 }
 
+#ROOT!
 options = {
     '_order': ['vehicles'],
     'vehicles': {
@@ -371,6 +420,10 @@ options = {
     }
 }
 
+#----------- parsing ----------
+
+
+#   The following function isn't really used when automatically generating anymore...
 
 #checks whether splitting by comma or space works
 #then returns the values parsed
@@ -404,7 +457,7 @@ def extract_using_split(string, required_len, required_outer_type, required_inne
     else:
         return result
 
-
+# matches types
 def match_simple_type(value, t):
     if t in (str, int, float, long):
         return apply(t, value.strip())
@@ -416,6 +469,8 @@ def match_simple_type(value, t):
             raise Exception
 
 #returns pair (value, skip_suboptions)
+# handles the prompt to the user, the expected type, how to extract the input
+# bit messy but works
 def handle_prompt(prompt, expected_type):
     while True:
         value = raw_input(" %s> " %prompt)
@@ -434,8 +489,8 @@ def handle_prompt(prompt, expected_type):
                             expected_length = allowed_type[1] #list or tuple
                             if value.strip().startswith('[') or value.strip().startswith('('):
                                 # try to check if they entered [1,2,3] or (1,2,3) syntax directly
-                                v = ast.literal_eval(value)
-                                #TODO technically missing a check here for types within the list/tuple
+                                v = ast.literal_eval(value) #cool safe equivalent to eval()!
+                                #TODO missing a check here for types within the list/tuple
                                 if type(v) != allowed_type[0] or (expected_length != ANY_LENGTH and len(v) != expected_length):
                                     raise Exception
                             else:
@@ -453,12 +508,16 @@ def handle_prompt(prompt, expected_type):
 
 
 # following two functions can probably be refactored into one
+
+# extracts an argument list in the options to actual python values
+# eg "arg:_n" => [value...]
+# needed is the required arguments string, args is the args passed in from the parent, and this is the current values collected on this parse level
 def get_args_list(needed, args, this):
     if len(needed) == 0:
         return []
     needed_args = needed.split(',')
     extracted = []
-    for a in needed_args: #order matters!
+    for a in needed_args: #***order matters***
         where, arg = a.split(':')
         #val_name, val_as = arg_val_as.split(' as ')
         if where.strip() == 'arg':
@@ -469,6 +528,7 @@ def get_args_list(needed, args, this):
             print("Unknown 'where' type: %s" %(where))
     return extracted
 
+# same as above, but returns a dict ie. "arg:_n" => {"_n": whatever}
 def get_args_dict(needed, args, this):
     if len(needed) == 0:
         return {}
@@ -506,6 +566,7 @@ def get_default(spec, args, this):
     else:
         return spec['default']
 
+# convert a returned dictionary from a suboption into an array according to an order
 def result_dict_convert(d, params, to_tuple=False):
     t = []
     if 'order' in params:
@@ -516,6 +577,8 @@ def result_dict_convert(d, params, to_tuple=False):
         return tuple(t)
     return t
 
+
+#messy logic to handle all the parsing
 #args has one special key _n which is the enumator value
 def experiment_setup_parser(root, args):
     order = root['_order'][:] #copy
@@ -569,6 +632,13 @@ def experiment_setup_parser(root, args):
 
 
 if __name__ == '__main__':
+
+    print("""RIGHT these arguments are bloody confusing
+      use "-d -ct Hover_Line 5 30 3" to automatically generate a Hover_LineInto scenario with 5 vehicles, initial mean distance 30m and stddev 3m
+      use -i or nothing to use the prompts manually
+      use -i -d to do a sort of random point to point generation with 2 vehicles
+      don't use -i and -ct together because something will break/not work properly...
+    """)
     parser = argparse.ArgumentParser(description='Create an experiment automatically')
     mgroup = parser.add_mutually_exclusive_group()
     mgroup.add_argument("-i", action='store_true', help="Interactive prompt for manual entry (default if no arugments provided)")
@@ -580,8 +650,6 @@ if __name__ == '__main__':
     collision_types = {
         'Hover_Line': Hover_LineInto
     }
-
-    print args
 
     # not interactive and not programmatic => randomly generated with default values
     if not args.i and not args.collision_type:
@@ -601,7 +669,6 @@ if __name__ == '__main__':
         instance_args = ct[1:]
         instance = collision_types[ct[0]](*instance_args)
 
-    print USE_ALL_DEFAULTS, instance
 
     plan = experiment_setup_parser(options, {})
 
@@ -617,4 +684,4 @@ if __name__ == '__main__':
     os.mkdir(os.path.join('.', 'experiments', experiment_name))
     open(os.path.join('.', 'experiments', experiment_name, \
         'plan.json'), 'w').write(json.dumps(plan, indent=4))
-    print "Sucessfully generated plan"
+    print "Sucessfully generated plan " + experiment_name

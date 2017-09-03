@@ -12,7 +12,7 @@ import math
 
 CONNECTION_IP = '127.0.0.1'
 DISTANCE_TOLERANCE = 0.5 # must be this far from a point to be considered "there"
-FNULL = open(os.devnull, 'w')
+FNULL = open(os.devnull, 'w')   # equivalent to > /dev/null
 
 
 def dist(loc1, loc2):
@@ -154,7 +154,7 @@ class VehicleRunner():
         
 
         #~/dev/ardupilot/build/sitl-debug/bin/arducopter -S -I0 --home -35.663261,149.165230,584,353 --model + --speedup 1 --defaults /home/joshua/dev/evaluation/copter_params.parm --wipe
-        cmd = ["/home/joshua/dev/ardupilot/build/sitl-debug/bin/arducopter"]
+        cmd = ["../../build/sitl-debug/bin/arducopter"]
         cmd.append('-S')
         cmd.append('--wipe')
         cmd.extend(['--model', '+'])

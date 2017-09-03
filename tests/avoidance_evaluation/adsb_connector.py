@@ -6,47 +6,54 @@ import time
 import socket
 from math import radians, cos, sin, asin, sqrt, pi
 
+"""
 
+Relatively basic script to receive and forward adsb_vehicle messages between SITL instances
+
+Could be improved by adding age timeouts for connections and removing them. Currently would need to restart script to avoid sending packets to udp ports no longer being used.
+
+"""
+
+# prepare a mavlink connection reading on port 3000
+# all SITL instances send UDP packets here
 conn = mavutil.mavlink_connection("udp:127.0.0.1:3000")
+# set blocking true
 conn.port.setblocking(1)
 
+EARTH_RAD = 6378137.0 #Radius of "spherical" earth
 
-mv = mavlink.MAVLink(conn)
-
+# run receiver in a separate thread so it can block
+# param receive: function which receives a message and returns the message and sender address
+# param handler: class with method handle_message
 def threaded_reader(receive, handler):
     while True:
         msg, sender_addr = receive()
         handler.handle_message(msg, sender_addr)
 
+# basic receiver which reads packets from conn
 def receive_msg():
     msg = conn.recv_msg()
     return (msg, conn.last_address)
 
+# for testing
 def receive_filtered(type_list):
     msg = conn.recv_match(type_list)
     return (msg, conn.last_address)
-"""    
-def receive_all():
-    buf = conn.recv()
-    return (buf, conn.last_address)
-    
-def parse_raw(buf):
-    msg = mv.parse_char(buf)
-    print msg
-    return msg
 
-"""
-def udp_send_to(buf, addr):
-    # Only 1 byte arrives?
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setblocking(1)
-    print sock.sendto(buf, addr)
-
+#this didn't end up working
+#use conn.port.sendto instead
+# def udp_send_to(buf, addr):
+#     # Only 1 byte arrives?
+#     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+#     sock.setblocking(1)
+#     print sock.sendto(buf, addr)
 
 
 
 class MessageHandler:
     def __init__(self, vehicle_manager):
+        # dynamic_out and handle_config are legacy
+        # only need adsb_vehicle_message now
         self.handlers_table = {
             mavlink.MAVLINK_MSG_ID_ADSB_VEHICLE : self.handle_adsb_vehicle_msg,
             mavlink.MAVLINK_MSG_ID_UAVIONIX_ADSB_OUT_DYNAMIC: self.handle_dynamic_out_msg,
@@ -58,13 +65,8 @@ class MessageHandler:
         f = self.handlers_table[msg.id]
         result = f(msg, sender_addr)
 
+        # forward message to other SITL instances
         self.vehicle_manager.broadcast(result, sender_addr)
-
-    def get_squawk(self, msg):
-        return msg.squawk     #hack until sort out proper retrieval mechanism for names
-
-    def get_id(self, msg):
-        return self.get_squawk(msg)
 
     def handle_adsb_vehicle_msg(self, msg, sender_addr):
         print "handling adsb_vehicle message"
@@ -73,20 +75,10 @@ class MessageHandler:
         loc = (msg.lat, msg.lon, msg.altitude)
         self.vehicle_manager.update(loc, sender_addr)
 
-        #TODO: turn msg into byte buffer
-        testing = msg.get_msgbuf() #inverse of parse_char?
+        m = msg.get_msgbuf() #inverse of parse_char? yes, use .get_msgbuf()
 
-        return testing
+        return m
 
-    def handle_dynamic_out_msg(self, msg):
-        #TODO translate into ADSB_VEHICLE, return that message
-        print "handling dynamic_out message - this shouldn't be arriving anymore"
-        return None
-
-    def handle_config_out_msg(self, msg):
-        #ignore for now
-        print "handling config_out message - this shouldn't be arriving anymore"
-        return None
 
 
 
@@ -95,19 +87,13 @@ class VehicleManager:
     Handles vehicle ID, location/altitude, port
     Update on new location data
     forward 
-
     """
     def __init__(self, default_cutoff_dist = None):
-        #map from port to (lat,long,alt)
+        #map from addr,port to (lat,long,alt)
         self.vehicles = {}
         self.default_cutoff_dist = default_cutoff_dist
 
-        self.out_port = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.out_port.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.out_port.bind(('127.0.0.1', 2999))
-        self.out_port.setblocking(1)
-
-        self.send_lock = threading.Lock()
+        #self.send_lock = threading.Lock()
 
     def update(self, loc, addr):
         self.vehicles[addr] = loc
@@ -133,30 +119,28 @@ class VehicleManager:
             return True
 
     def udp_send_to(self, buf, addr):
-        #self.send_lock.acquire()
-        #print("Send %d bytes to %s" %(self.out_port.sendto(buf, addr), str(addr)))
-        #self.send_lock.release()
-        
-        #print("Send %d bytes to %s" %(self.out_port.sendto(buf, addr), str(addr)))
-
         print ("Using mavlink conn port: %d to %s", (conn.port.sendto(buf, addr), str(addr)))
 
-
-        #sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        #sock.setblocking(1)
-        #print sock.sendto(buf, addr)
-        #udp_send_to(buf, addr)
 
     @staticmethod
     def dist(loc1, loc2):
         """
-        This method is an approximation, and will not be accurate over large distances and close to the
-        earth's poles. It comes from the ArduPilot test code:
-        https://github.com/diydrones/ardupilot/blob/master/Tools/autotest/common.py
+        Calculate the great circle distance between two points 
+        on the earth (specified in decimal degrees)
+        altitude in meters!
         """
-        dlat = loc2[0] - loc1[0]
-        dlong = loc2[1] - loc1[1]
-        dist = math.sqrt((dlat*dlat) + (dlong*dlong)) * 1.113195e5
+        lat1, lon1, alt1 = loc1[:3]   # trim in case heading is also appended after lat, long, alt
+        lat2, lon2, alt2 = loc2[:3]
+        # convert decimal degrees to radians 
+        lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+
+        # haversine formula 
+        dlon = lon2 - lon1 
+        dlat = lat2 - lat1 
+        a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+        c = 2 * asin(sqrt(a)) 
+        horizontal_dist = c * EARTH_RAD
+        dist = sqrt(horizontal_dist**2 + (alt2-alt1)**2) 
         return dist
 
 
