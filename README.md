@@ -154,8 +154,16 @@ The failsafe built into ArduPlot essentially does a straight line projection of 
 As a result of these realizations I spent my last week considering an N-Body avoidance algorithm developed further below.
 
 ## N-Body Avoidance idea 
-Switch to the branch **summer_2017_jsend_deconfliction** and see the readme there!
+Switch to the branch [summer_2017_jsend_deconfliction](https://github.com/flyingsilverfin/ardupilot/tree/summer_2017_jsend_deconfliction) and see the readme there!
 
+.
+.
+.
+.
+.
+.
+
+Good luck!
 
 
 
