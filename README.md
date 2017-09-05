@@ -1,6 +1,6 @@
 # Welcome to Joshua Send's branch of ArduPilot
 
-This branch was created in the latter half of my internship in Cambridge under Cecilia Mascalo and Alessandro Montenari.
+This fork was created in the latter half of my internship in Cambridge under Cecilia Mascalo and Alessandro Montenari.
 
 A large part of the work was creating a framework for evaluating the existing collision avoidance built into ArduPilot. This involved implementing functionality for multiple instances of software-in-the-loop (SITL) simulated multicopters to talk to each other over the ADS-B protocol (see [Motivation] (#motivation)). Various python scrips generate flight paths, launch SITL instances, and evaluate the resulting flight logs.
 
@@ -154,7 +154,7 @@ The failsafe built into ArduPlot essentially does a straight line projection of 
 As a result of these realizations I spent my last week considering an N-Body avoidance algorithm developed further below.
 
 ## N-Body Avoidance idea 
-Branch xxx
+Switch to the branch **summer_2017_jsend_deconfliction** and see the readme there!
 
 
 
