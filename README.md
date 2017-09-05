@@ -1,162 +1,69 @@
 # Welcome to Joshua Send's branch of ArduPilot
 
-This branch was created in the latter half of my internship in Cambridge under Cecilia Mascalo and Alessandro Montenari.
+The main README and documentation lives on the [summer_2017_jsend](https://github.com/flyingsilverfin/ardupilot/tree/summer_2017_jsend) branch. Here I describe my ideas for an **altitude-based n-body avoidance** algorithm.
 
-A large part of the work was creating a framework for evaluating the existing collision avoidance built into ArduPilot. This involved implementing functionality for multiple instances of software-in-the-loop (SITL) simulated multicopters to talk to each other over the ADS-B protocol (see [Motivation] (#motivation)). Various python scrips generate flight paths, launch SITL instances, and evaluate the resulting flight logs.
+## Concept
 
-In the last week of my internship I had an idea for an n-body collision avoidance algorithm which I started outlining and implementing, though probably needs to be thought through again any further work is done.
+The main algorithmically interesting idea is to have each vehicle independently reach the same conclusion for deconfliction action. The actions I propose are altitude-based: given a set of "conflicting" vehicles in a region, each vehicle travels to a unique height and proceeds towards its goal without a deviation from the original path in XY/East-North plane. This means each vehicle is always making progress towards its goal.
 
-The rest of this document outlines background information, an intuition for Ardupilot and related UAV-technologies (some of which took me a long time to find and learn), the evaluation framework I built, and an outline of my N-Body avoidance idea.
+The primary constraint is the use of one-directional communication: ADSB. The immediately useful information contained in these messages is ICAO (an ID), GPS position, altitude, heading, and horizontal and vertical speed. I'm doubtful that a 1 Hertz update rate will be very effective if the safety margins are not going to be very large, but this could be one aspect of experimentation as well.
 
-## Background
+My idea revolves around the concept of dynamically defining _conflict zones_ when aircraft get too close to each other. Once a conflict zone has been defined and is predicted to contain some set of vehicles, the vehicles are assigned an altitude based an ordering over their ID's. The key idea is that everyone needs compute the same set of planes to be in a conflict zone. Doing this efficiently is hard (not sure if it's even possible to do very efficiently), and its effectiveness in highly unpredictable flight patterns is doubtful, but I think there are some interesting problems buried here.
 
-### Motivation 
-The initial idea of the internship was to do research into air traffic control for urban environments. Air traffic control is composed of multiple elements ranging from path planning, air restrictions, plane identification, collision avoidance, weather planning and more. The next generation of air traffic control systems will be similar to the proposed/in progress system in the US called [NextGen](https://en.wikipedia.org/wiki/Next_Generation_Air_Transportation_System).
+## Simplification - Static Conflict Zones
 
-[This paper](http://unmanned.berkeley.edu/assets/papers/Aislan_REDUAS15.pdf) is a decent introduction to many of the issues around modern air traffic control. One key element is the massive increase is airborne vehicles, due to UAV use, which exceeds the capacity of the current human air traffic control operators. Automated, dynamic airspace management is the next step. [AirMap](https://www.airmap.com/) appears to be working towards this as a package licenseable to states/cities.
+Rather than plunging straight into the dynamic collision zone definition, I think it would be fruitful and more feasibly to start with a simpler concept of zones: overlay a grid based on GPS coordinates of some regular area over the world (or some subregion to start with). Using the simple straight-line projections already found in Ardupilot, a plane predicts which other planes will enter the zone of interest. Some will likely need to be ignored as they're just leaving the zone as we enter. Given this set, assign an altitude to each plane to fly through that zone.
 
-It was eventually settled I would work on collision avoidance as it is a rather self-contained problem it might be possible to do some research in. However, this is a classic robotics problem that has seen a recent (~last decade) explosion of research due to autonomy in cars, factories, and UAVs. A selection of papers I find enlightening and interesting are listed in the next section.
+This high level view is obviously hiding some dangers. Importantly, planes just across boundaries do not take each other into account. However, the frequency of this occuring and causing issues might be too small to worry about.
 
-One important takeaway from all this is the standardization of [ADS-B](https://en.wikipedia.org/wiki/Automatic_dependent_surveillance_%E2%80%93_broadcast) as a replacement for radar in NextGen which broadcasts position, heading, speed, callsign. There's a good chance something like this will become standard in smaller vehicles as well, so my work focused on using ADS-B driven collision avoidance. ADSB equipped planes tend to use a 1Hz broadcast rate with a range of 500+ miles.
+One issue with altitude-based deconfliction is that planes have limited attainable altitudes within a forward distance constraint (ie. going too far forward would cause a collision). With multicopters this is less of an issue as they can vertically climb to their needed altitude. However, this might be something to consider if extending to fixed wing planes.
 
-### Past work
+One interesting aspect of this is that if we can compute the 4 or 8 neighboring zones' and therefore what height planes are predicted to arrive at in a zone, we can merge sets of planes that are currently actively deconflicting with each other. This is much better than requiring a complete reshuffle of all the planes entering a zone based on their ID's. Imagine two columns of aircraft actively deconflicting and therefore restricted to a certain height per plane. When meeting another column in the same configuration, pairs of aircraft would crash into each other. Rather than reshuffling and starting from 'scratch', we can deconflict the planes at the same height, then insert the result into the large new column. This minimizes each plane's altitude changes. See the image below:
 
-Here's just a brief introduction to some of the background reading I found
+![better deconfliction](docs/images/deconfliction.png)
 
-* Two papers from 1997 with some basic but interesting ideas [here](http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.533.7928&rep=rep1&type=pdf) and [here](http://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=657844)
-* [This Paper](https://link.springer.com/article/10.1007/s10514-013-9334-3) from 2013
-  * It uses something called an RRT or rapidly exploring random tree
-  * The paper developing this is somewhat older but the core features are widely used
-  * I figure these are a bit too expensive to do on a small flight controller, but are perhaps feasible soon
-* Speaking of RRTs, a 2015 paper combined ADSB and RRTs for collision avoidance: [here](https://asu.pure.elsevier.com/en/publications/sense-and-avoid-for-unmanned-aerial-vehicles-using-ads-b-2)
-  * This approach could be improved; it's aimed at avoiding large aircraft, uses RRT's which I think are relatively expensive, only avoids 1 aircraft at a time, and doesn't specify how to return towards the original goal
+The prior zone's plane height could just be taken as the plane height right before entering a new zone.
 
-There are many more papers in this field. Thorough overviews can be found in suveys. A recent one is [this 2015 one](http://www.sciencedirect.com/science/article/pii/S0376042115000020) which does a good job categorizing approaches, which range from force-field, to genetic, to game theoretic, to control theory. [This other one](https://link.springer.com/chapter/10.1007%2F978-3-319-17765-6_18) is less expansive but focuses more on collision avoidance rather than path planning. Quick note: path planning can solve collision avoidance, but collision avoidance can be reactive and only deviate when sensing an obstacle (*sense and avoid*). We also want to think about approaches that are decentralized, as we only have one way communication via ADS-B and can't perform concensus or coordinated decision making.
+The tricky bit here, as with dynamic conflict zones, is making everyone compute the same set of planes for each zone. 
 
-### Project
-
-As a result of all the existing work, it's hard for newcomers to try to invent something original - I decided to evaluate the existing collision avoidance in ArduPilot. Just as I mostly finished the framework for this (see [Framework](#framework)), I came up with what I think is a novel idea I outline at the end of this document.
+Further difficulties:
+* Transitions probably take some distance to achieve - transition regions between zones? Or just make zones larger and use edges to reach needed height (pretty much equivalent). Or just don't worry about it?
 
 
-## Evaluation 
+## Independent Computation of Sets
 
-There are several simulators that can be used for evaluating algorithms. I began with [AirSim](https://github.com/Microsoft/AirSim/) but this is focused on vision and machine learning, and doesn't have any functionality for ADS-B or multiple drones. I ended up using ArduPilot which has a great community and is quite mature.
+As mentioned before, a core difficulty is computing the same sets of vehicles in a 'zone' (static or dynamic) without bi-communication between vehicles.
 
-However, it is quite a large platform so hopefully the next section will give useful pointers and help the familiarization process.
+Assuming we can run the same algorithm on each aircraft, and each aircraft has access to the same information at any given time, the algorithm should always compute the same set regardless of the host vehicle. Realistically, the local aircraft has access to much more information about its own position, state, intent than it does about other vehicles. However, utilizing this means the algorithm gets different information on different UAVs and thus guarantee of equivalent results is broken. Unless it can be shown that we can converge to identical results with more local information than about other vehicles, the simple solution is to restrict local information to the same as what has been sent to everyone else. Immediate receipt of ADSB messages is an approximately valid assumption as they travel as radio waves (this leads to further challenges: how to deal with _collisions_ or dropped packets? the events aren't universally known information...)
 
-### Familiarization with Ardupilot
+This is something I've implemented in [UAV_Avoidance.cpp](libraries/AP_Avoidance/UAV_Avoidance.cpp) along with modifications in various other parts of the firmware (If I remember correctly it was mostly [AP_ADSB](libraries/AP_ADSB) and [AP_Avoidance](/libraries/AP_Avoidance).
 
-[This](http://ardupilot.org/) is the Ardupilot homepage but more useful is the [dev wiki](http://ardupilot.org/dev/index.html).
+## Dynamic Conflict Zones
 
-Ardupilot is a firmware that can control copters, planes, rovers, subs and more. In the source, code specific to each of these is under `ArduCopter/`, `ArduPlane/` etc. Shared code for multiple platforms is in `libraries/`. I use ArduCopter as my main target to start with, though some of the ideas might be transferable to Plane.
+Rather than using a geographical grid defined over the earth, we can dynamically create conflict zones. My approach comes at quite a cost in computation and complexity. I continue using the assumption that we limit information
 
-#### Components 
+The core idea is for each plane to predict time-to-danger (ie. time until entering a certain radius) for each other plane within some distance, along with time-until-safe ie. when the overlap has passed. This computation is done in the XY plane ignoring altitude for now. This results in a time interval for each plane to each other plane (t1,t2). These intervals are then merged with other intervals for each plane, resulting in smaller intervals of a larger number of aircraft. After a while each aircraft determines all the time intervals with sets of aircraft close together. The time interval in essence defines the conflict zone. I've attempted to start implementing this in the `UAV_Avoidance` code linked above.
 
-There are several components which enable simulated drone flights. A build of the ArduPilot for `SITL` (software-in-the-loop) produces the binary for the physics and copter simulation. Normally, an instance can then be started and communicated with using a `MavProxy` instance, which is a *Ground Control Station* capable of controlling the UAV over some sort of communication link. The communication link runs a protocol called `MAVLink` (in fact, basically all communication to do with UAVs will be MAVlink including on the drone itself). Python scripts communicating with a drone can use a python wrapper for `mavlink` called `pymavlink`. A even higher level library called `DroneKit` provides a nice API for simple movement commands - I use this as a pretend onboard computer (which might be a raspberry pi) which communicates with the drone and tells it what to do - for instance go to the next waypoint.
+We can attempt to do this more efficiently by taking our local predicted flight path, and calculating relevant intervals for each other plane. These are merged and 'linearized' (see image below - right hand size if after the merging/linearization).
 
-#### Build ArduPilot SITL
-You don't actually need to do this manually, there's a script `Tools/autotest/sim_vehicle.py` which will do the build and all that for you. However, I like to split the commands `sim_vehicle` runs internally (ie. an instance of SITL and an instance of MAVProxy as a ground station) so I can say run the SITL instance within `gdb` for debugging purposes.
+![merge and linearize](docs/images/linearize.png)
 
-Start page is [here](http://ardupilot.org/dev/docs/building-the-code.html), and for SITL is [here](http://ardupilot.org/dev/docs/setting-up-sitl-on-linux.html). I used BashOnWindows which is more or less equivalent to linux for my purposes - use an X server like XMing to run the graphical interfaces if needed on windows.
+This would have to be done recursively to take into account any other vehicles that `v1` and `v2` conflict with other than `v0` (not depicted).
 
-The key steps that need to be run after cloning the repository are
-1. The prerequisites script `Tools/scripts/install-prereqs-ubuntu.sh`
-    * this sets ups various required tools, initializes git submodules (for instance pymavlink) and some other stuff
-1. `waf configure --board sitl --debug`
-    * run this from the ArduPilot root director.y `waf` is the build platform used by ArduPilot. Don't use `make` - it's deprecated. This step sets up the build to compile the SITL target in debug mode (see (Debuging)[#debugging]), which lets you use gdb to debug later if you want. Very useful sometimes I've found!
-1. `waf build --target bin/arducopter -v -j8 --debug`
-    * This bulds the `arducopter` binary in verbose mode using up to 8 threads. The resulting binary should be under `build/sitl-debug/bin/arducopter`
+This recursive process is implicity taking advantage of transitivity of conflicts. This might be overly restrictive in the future: three planes flying in parallel, just inside of each other's alert radius (let's call them `v0`, `v1`, and `v2`). v1 is in the middle, and sees both `v0` and `v2` as conflicting. Thus, it needs to deconflict with both. However, the other two vehicles really only conflict with `v1`. We need to respect transitivity because the ID's might dictate that doing pairwise deconfliction between `v0` and `v1` results in `v1` over `v0`, while between `v1` and `v2`, `v1` is on the bottom. Thus pairwise deconfliction results in the demand that `v1` be both on top and bottom, which is impossible. Respecting a transitive conflict is one way to guarantee this doesn't happen. The transitivity propert also means that starting from the perspective of `v0` or `v1` means everyone computes the correct set of intervals for themselves (I think).
 
+Issues:
+* the interval merging process is hard to implement and think about in the recursive case
+* The result of two merging intervals may result in a small time interval - small enough that we can't possibly get to the required height. Ignore it? but the result of many of these 'trimmings' might be overall quite a lot. However I think this might be the only/correct way of doing it - imagine N vehicles on a circle converging towards each other. They overlap in sets to start with then all together - we need to be most concerned about the huge confliction in the middle not the 0.5s conflict between two neighbors before and after that.
 
-#### Running SITL firmware with debugging 
-I've found this really useful! Run `gdb` with the `sitl-debug` binary like this:
+### Extensions
 
-```
-gdb --args ~/dev/ardupilot/build/sitl-debug/bin/arducopter -S -I1 --home -35.663261,149
-.165230,584,353 --model + --speedup 1 --defaults ~/dev/ardupilot/tests/avoidance_evaluation/copter_parameters/copter_params_1.parm --wipe
-```
+I can think of several extensions to this
 
-This launches gdb with the rest of the parameters as the command to run. When `run` is executed in gdb, we get the SITL instance running as instance `1`, at the given GPS coordinates, altitude (meters), and heading (degrees from true North). The `model +` tells it to use a quadcopter frame, run with speedup 1 (ie. no speedup), and default parameters given. `--wipe` will wipe any stored parameters and state and use the defaults provided with the new instance.
-
-#### MAVProxy 
-Just running the binary as above won't do anything, it's waiting for a ground station to connect to it - ie. MAVProxy. After installing mavproxy, if it isn't already installed (try `sudo pip install MAVProxy`), run:
-
-`mavproxy.py --master tcp:127.0.0.1:5770 --out udp:127.0.0.1:3005 --map --console`
-* `--master` tells it the TCP port that the SITL instance is expecting it's communications link on. Note that we're connecting to `I1` or instance, one which is at port `1*10 + 5760`. Instance 0 would be at 5760.
-* `--out` tells mavproxy to open an extra UDP port to 3005 to which it forwards all mavlink packets it receives (this is quite a lot).
-* `--map` and `--console` launch two graphical interfaces for the drone
-
-Check mavproxy documentation for further details.
-
-Try a basic flight:
-1. `mode guided`
-1. `arm throttle` (this has a timeout and will disarm if not quick enough on the takeoff)
-1. `takeoff 10` (takeoff 10m)
-1. right click on the map and click `fly to` 
-1. `mode land` should slowly descent and land, while `mode rtl` should return to home position and land
-
-#### Parameters
-In MAVProxy you can also also adjust a lot of parameters that affect the flight or simulation. List them all with `param show *` or some other regexp. There can be set here, as well as in the default parameters file provided to the binary.
-
-**Modifying SYSID_THISMAV** which is the system ID for the drone and needs to be unique requires a restart of the instance! I didn't realize this for a while which is why there are many parameter files under `tests/avoidance_evaluation/copter_parameters` only differing by the ID.
-
-The other parameters I set in those files relate to enabling ADSB simulation, as well as enabling the built in obstacle avoidance. The main file is `copter_params.parm` which, upon running the `generate_params.py` script in the folder copies it with correct id's.
-
-
-#### Summary ####
-
-Cool! Everything above is related to general Ardupilot, SITL, Mavproxy stuff. Next up is modifications and scripts I've written. More documentation in the code itself.
-
-### Framework
-
-The firmware ships with a bit of code which generates fake 'flights' for testing ADSB avoidance - but these aren't other simulated copters or planes that act independently. See [here](http://ardupilot.org/copter/docs/common-ads-b-receiver.html)
-
-#### Overview ####
-
-NOTE: this portion my work is on the **summer_2017_jsend** branch of this fork! Ie. if you're seeing this, you're good!
-
-The first step is to let multiple actual SITL instances talk to each other over ADS-B. The architecture I ended up with is in the image below:
-
-![architecture](tests/avoidance_evaluation/architecture_filled_in.jpg)
-
-Dronekit instances (Python) control each simulated copter. This includes controlling takeoff, waypoints, speed etc. The firmware running is agnostic to the platform (could be Pixhawk, native linux etc.). To enable this, the HAL (hardware abstraction layer) we built here is called HAL_SITL, a specific abstraction layer for software in the loop simulations. One relevant aspect of this is that the `UART_Driver` component knows to connect to a Socket rather than an actual hardware device. The other end of this socket ends up in the simulation portion, specifically connected to `SIM_ADSB`. I've modified `SIM_ADSB` to better model an actual ADSB transceiver, and it now forwards `mavlink_msg_adsb_vehicle` messages to a python script `ADSB_connector.py`. For comparision, in real flights messages travel from the proprietary UAVIONIX transceiver over the air to other receivers, arriving back in `AP_ADSB` as `mavlink_msg_adsb_vehicle`. The python script passes these messages back to all other simulations running at the time. By routing through an external script we could easily incorporate packet loss rates (skip forwarding sometimes), and out of range functionality (don't forward if gps coordinates are too far apart).
-
-The parameter settings that SITL instances are loaded with means that a `logs` directory should be found, with one folder per experiment and within that one directory per instance. The resulting position logs are analyzed by a separate script.
-
-If you want to delve into the ArduPilot source, here's a list of relevant locations:
-* [libraries/AP_ADSB](libraries/AP_ADSB)
-* [libraries/AP_Avoidance](libraries/AP_Avoidance)
-* [libraries/SITL](libraries/SITL)  Notably the SIM_ADSB files in there
-* [libraries/AP_HAL_SITL](libraries/AP_HAL_SITL) The UARTDriver here is one part of the abstraction. Rather than trying to dive through all of this manually as I did once I recommend using `gdb` to attach a breakpoint somewhere and checking the stack trace.
-
-### Experiment Creation, Running, and analysis
-
-These scripts are located under [tests/avoidance_evaluation](tests/avoidance_evaluation). 
-
-See the README there for more details!
-
-The intended usage is: 
-1. generate experiment(s)
-2. run experiments
-3. analyze logs
-
-
-### Existing Collision Avoidance 
-
-I realized at one point that the existing collision avoidance built into `AP_Avoidance` is a *failsafe*. In other words, it takes over complete control if it detects danger (configurable via the parameters `AVD_*` - to access most of these you may need to set `AVD_ENABLE` to `1`, and then run `param fetch`).
-
-The end result is that you cannot make progress toward your goal or retain control while the failsafe has kicked in. The failsafe behavior is settable via a parameter, ranging from landing to flying away perpendicularly from the incoming object's flight path. 
-
-I believe this approach is great for avoiding manned aircraft - in the interest of minimizing risk to humans, the best thing to do is run away from the incoming aircraft. However, this is too restrictive for drone-drone interactions and continue to make progress toward our goal while also avoiding other vehicles. My new idea for achieving this is discussed in the next section.
-
-The failsafe built into ArduPlot essentially does a straight line projection of the current vehicle and up to N other vehicles it tracks via their ADSB messages. A forward projection up to a time horizon predicts the closest a vehicle comes. The most imminent threat is then taken action against if it is predicted to approach within some radius. This highly effective approach in avoiding conflict can largely be analyzed analytically; it can really only be beaten if given a relative velocity *v*, with an adsb update period of *t* and avoidance radius of *r*, _v*t > r_.
-
-As a result of these realizations I spent my last week considering an N-Body avoidance algorithm developed further below.
-
-## N-Body Avoidance idea 
-Branch xxx
-
-
+* examine feasibly of using this approach for fixed wing planes, given their limited climb angles
+* combine this with horizontal deconfliction methods as well: we could apply vertical deconfliction plus horizontal deconfliction to reduce the altitudes needed for avoidance.
+* explore impact of ADSB update rate (what about heterogenous rates?)
+* heterogenous aircraft safety radii?
 
 
 
